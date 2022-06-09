@@ -1,0 +1,7 @@
+@PACKAGE_INIT@
+
+set_and_check(epollbook_INCLUDE_DIRS "@PACKAGE_CMAKE_INSTALL_INCLUDEDIR@")
+set(epollbook_LIBRARIES "-L@PACKAGE_CMAKE_INSTALL_LIBDIR@ -lepollbook")
+include("@PACKAGE_ConfigPackageLocation@/epollbookTargets.cmake")
+
+check_required_components(epollbook)
