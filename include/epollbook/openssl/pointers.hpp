@@ -21,6 +21,11 @@ struct DeleterFor<EVP_MD_CTX> {
 };
 
 template <>
+struct DeleterFor<EVP_CIPHER_CTX> {
+    void operator()(EVP_CIPHER_CTX* p) { EVP_CIPHER_CTX_free(p); }
+};
+
+template <>
 struct DeleterFor<EVP_PKEY> {
     void operator()(EVP_PKEY* p) { EVP_PKEY_free(p); }
 };
