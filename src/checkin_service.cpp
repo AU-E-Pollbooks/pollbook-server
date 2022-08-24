@@ -48,7 +48,7 @@ void CheckinService::start_size_read(asio::ip::tcp::endpoint client_ip) {
                      });
 }
 
-void CheckinService::start_body_read(asio::ip::tcp::endpoint client_ip, std::size_t size_of_message) {
+void CheckinService::start_body_read(const asio::ip::tcp::endpoint& client_ip, std::size_t size_of_message) {
     // Allocate a buffer for the message
     client_receive_buffers.emplace(client_ip, std::vector<uint8_t>(size_of_message));
     // Asynchronously read until it is full
@@ -59,7 +59,7 @@ void CheckinService::start_body_read(asio::ip::tcp::endpoint client_ip, std::siz
                      });
 }
 
-void CheckinService::handle_read(asio::ip::tcp::endpoint client_ip, const asio::error_code& error, std::size_t bytes_transferred) {
+void CheckinService::handle_read(const asio::ip::tcp::endpoint& client_ip, const asio::error_code& error, std::size_t bytes_transferred) {
     if(!error) {
         // For now, just assume the message was a string (sent as a char array), and print it out
         logger->debug("Finished reading message of size {} from client at {}", client_receive_buffers.at(client_ip).size(), client_ip);

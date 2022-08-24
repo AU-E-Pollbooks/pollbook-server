@@ -25,8 +25,17 @@ if(ASIO_PATH STREQUAL "ASIO_PATH-NOTFOUND")
     message(FATAL_ERROR "ASIO not found. You can download it from https://think-async.com/Asio")
 endif()
 include_directories(${ASIO_PATH})
+# mutils library, which is required for mutils-serialization
+find_package(mutils)
+if (NOT ${mutils_FOUND})
+    message(FATAL_ERROR "mutils not found. Please install from https://github.com/mpmilano/mutils.git")
+else()
+    message(STATUS "Found mutils in: ${mutils_INCLUDE_DIRS}")
+    include_directories(${mutils_INCLUDE_DIRS})
+endif()
 
 # Process CMakeLists from each source-code directory
 add_subdirectory(src)
 add_subdirectory(src/openssl)
+add_subdirectory(src/mutils-serialization)
 add_subdirectory(apps)

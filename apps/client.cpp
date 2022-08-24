@@ -12,8 +12,8 @@ int main(int argc, char** argv) {
     std::string hostname(argv[1]);
     std::string port(argv[2]);
 
-    epollbook::PollbookClient client;
-    client.connect(hostname, port);
+    epollbook::PollbookClient client("client_private_key.pem");
+    client.connect_checkin_server(hostname, port);
     std::cout << "Connected to " << hostname << " on port " << port << std::endl;
 
     std::string message;

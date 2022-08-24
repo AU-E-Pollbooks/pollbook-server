@@ -39,7 +39,7 @@ private:
      * calls this function, the receive buffer for that client should be populated
      * with message data.
      */
-    void handle_read(asio::ip::tcp::endpoint client_ip, const asio::error_code& error, std::size_t bytes_read);
+    void handle_read(const asio::ip::tcp::endpoint& client_ip, const asio::error_code& error, std::size_t bytes_read);
 
     /**
      * Starts an asynchronous accept request on the connection listener.
@@ -59,7 +59,7 @@ private:
      * which will read the specified number of bytes. Assumes the server has
      * already read the initial 4 bytes to determine the size of the message.
      */
-    void start_body_read(asio::ip::tcp::endpoint client_ip, std::size_t size_of_message);
+    void start_body_read(const asio::ip::tcp::endpoint& client_ip, std::size_t size_of_message);
 
 public:
     /**

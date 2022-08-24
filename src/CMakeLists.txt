@@ -3,7 +3,9 @@ add_library(epollbook
     checkin_service.cpp
     pollbook_client.cpp
     log_utils.cpp
-    $<TARGET_OBJECTS:openssl_wrapper>)
+    voter_id_service.cpp
+    $<TARGET_OBJECTS:openssl_wrapper>
+    $<TARGET_OBJECTS:mutils-serialization>)
 
 # Specify that the epollbook target needs the include directory in this project when building
 target_include_directories(epollbook PUBLIC
