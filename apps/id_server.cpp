@@ -1,4 +1,4 @@
-#include <epollbook/checkin_service.hpp>
+#include <epollbook/voter_id_service.hpp>
 #include <epollbook/config/config.hpp>
 #include <epollbook/log_utils.hpp>
 
@@ -10,14 +10,14 @@ int main(int argc, char** argv) {
     if(argc > 1) {
         config_file = argv[1];
     } else {
-        config_file = "server_config.ini";
+        config_file = "id_server_config.ini";
     }
     // Read the configuration file
     epollbook::Config::initialize(config_file);
     // Set up the logger
-    epollbook::LogUtils::create_default_logger("server_log");
+    epollbook::LogUtils::create_default_logger("id_server_log");
     // Create a service object
-    epollbook::CheckinService service;
+    epollbook::VoterIDService service;
     // Start it running
     service.run();
 }

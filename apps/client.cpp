@@ -1,20 +1,25 @@
 #include <epollbook/pollbook_client.hpp>
+#include <epollbook/config/config.hpp>
+#include <epollbook/log_utils.hpp>
 
 #include <iostream>
 #include <string>
 
 int main(int argc, char** argv) {
-    if(argc < 3) {
-        std::cout << "Insufficient arguments." << std::endl;
-        std::cout << "Usage: " << argv[0] << " server_hostname server_port " << std::endl;
-        return -1;
+    std::string config_file;
+    if(argc > 1) {
+        config_file = argv[1];
+    } else {
+        config_file = "client_config.ini";
     }
-    std::string hostname(argv[1]);
-    std::string port(argv[2]);
+    // Read the configuration file
+    epollbook::Config::initialize(config_file);
+    // Set up the logger
+    epollbook::LogUtils::create_default_logger("client_log");
 
-    epollbook::PollbookClient client("client_private_key.pem");
-    client.connect_checkin_server(hostname, port);
-    std::cout << "Connected to " << hostname << " on port " << port << std::endl;
+    epollbook::PollbookClient client;
+    client.connect();
+    std::cout << "Connected to checkin server and ID server" << std::endl;
 
     std::string message;
     std::cout << "Enter a test message to send" << std::endl;

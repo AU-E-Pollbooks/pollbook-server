@@ -45,11 +45,13 @@ private:
 public:
     /**
      * Constructs a new PollbookClient that is not connected to any server.
-     *
-     * @param private_key_filename The name/path to a PEM file containing the
-     * client's private key.
      */
-    PollbookClient(const std::string& private_key_filename);
+    PollbookClient();
+    /**
+     * Connects the client to both the checkin server and the ID server, using
+     * the addresses and ports configured in the configuration file.
+     */
+    void connect();
     /**
      * Connects the client to a check-in server, identified by its hostname (which
      * could be just an IP address) and port. This is a blocking, synchronous method.

@@ -1,4 +1,5 @@
 #include "epollbook/voter_id_service.hpp"
+#include "epollbook/config/config.hpp"
 #include "epollbook/log_utils.hpp"
 
 #include <spdlog/fmt/ostr.h>
@@ -11,11 +12,13 @@
 
 namespace epollbook {
 
-VoterIDService::VoterIDService(std::uint16_t port, const std::string& private_key_filename)
+VoterIDService::VoterIDService()
     : logger(spdlog::get(LogUtils::get_default_logger_name())),
-      connection_listener(network_io_context, asio::ip::tcp::endpoint(asio::ip::tcp::tcp::v4(), port)),
-      signer(openssl::EnvelopeKey::from_pem_private(private_key_filename),
-             openssl::DigestAlgorithm::SHA256) {}
+      connection_listener(network_io_context,
+                          asio::ip::tcp::endpoint(asio::ip::tcp::tcp::v4(),
+                                                  Config::getUInt16(Config::SECTION_BASIC, Config::ID_SERVICE_PORT))),
+      signer(openssl::EnvelopeKey::from_pem_private(Config::getString(Config::SECTION_SECURITY, Config::LOCAL_PRIVATE_KEY)),
+             signature_digest_algorithm) {}
 
 void VoterIDService::do_accept() {
     connection_listener.async_accept(network_io_context,
@@ -81,7 +84,7 @@ void VoterIDService::handle_validation_request(const asio::ip::tcp::endpoint& cl
     int64_t time_difference = current_timestamp > request.timestamp
                                   ? current_timestamp - request.timestamp
                                   : request.timestamp - current_timestamp;
-    if(std::abs(time_difference) > request_freshness_interval) {
+    if(std::abs(time_difference) > Config::getUInt32(Config::SECTION_SECURITY, Config::REQUEST_FRESHNESS_INTERVAL)) {
         logger->warn("Rejected a voter ID validation request for being stale. Request timestamp was {} ms in the past", time_difference);
         return;
     }
@@ -89,24 +92,54 @@ void VoterIDService::handle_validation_request(const asio::ip::tcp::endpoint& cl
         logger->warn("Rejected a voter ID validation request because the ID data was not valid.");
         return;
     }
+    // Ensure the public key for this client is in memory
+    if(client_verifiers.find(request.client_id_num) == client_verifiers.end()) {
+        if(!load_client_public_key(request.client_id_num)) {
+            return;
+        }
+    }
     // Validate the client's signature
-    // This will require finding and loading a certificate for the client based on its IP address or hostname
+    openssl::Verifier& verifier = client_verifiers.at(request.client_id_num);
+    verifier.init();
+    verifier.add_bytes(&request.client_id_num, sizeof(request.client_id_num));
+    verifier.add_bytes(&request.timestamp, sizeof(request.timestamp));
+    verifier.add_bytes(request.voter_id_data.data(), request.voter_id_data.size());
+    if(!verifier.finalize(request.client_signature)) {
+        logger->warn("Rejected a voter ID validation request because the client's signature was invalid.");
+        return;
+    }
 
     // Sign the validation request to assert that it is valid
     signer.init();
+    signer.add_bytes(&request.client_id_num, sizeof(request.client_id_num));
     signer.add_bytes(&request.timestamp, sizeof(request.timestamp));
     signer.add_bytes(request.voter_id_data.data(), request.voter_id_data.size());
     signer.add_bytes(request.client_signature.data(), request.client_signature.size());
     std::vector<std::uint8_t> signature = signer.finalize();
 
     // Send it back in a response. For now, the write is synchronous, since we don't expect it to take very long.
-    VerifiedVoterID response(request.timestamp, request.voter_id_data, request.client_signature, std::move(signature));
+    VerifiedVoterID response(request.client_id_num, request.timestamp, request.voter_id_data, request.client_signature, std::move(signature));
     std::vector<uint8_t> response_bytes(mutils::bytes_size(response));
     mutils::to_bytes(response, response_bytes.data());
     asio::write(client_sockets.at(client_ip), asio::buffer(response_bytes));
 }
 
 bool VoterIDService::validate_id_data(const std::vector<std::uint8_t>& id_data) {
+    return true;
+}
+
+bool VoterIDService::load_client_public_key(std::uint32_t client_id) {
+    std::stringstream key_file_path_builder;
+    key_file_path_builder << Config::getString(Config::SECTION_SECURITY, Config::CLIENT_KEYS_FOLDER) << "/"
+                          << Config::getString(Config::SECTION_SECURITY, Config::CLIENT_KEY_FILE_PREFIX) << client_id << ".pem";
+    std::string key_file_path = key_file_path_builder.str();
+    try {
+        openssl::Verifier client_verifier(openssl::EnvelopeKey::from_pem_public(key_file_path), signature_digest_algorithm);
+        client_verifiers.emplace(client_id, std::move(client_verifier));
+    } catch(openssl::openssl_error& err) {
+        logger->error("Could not load public key for client {} from file {}. OpenSSL error: {}", client_id, key_file_path, err.what());
+        return false;
+    }
     return true;
 }
 

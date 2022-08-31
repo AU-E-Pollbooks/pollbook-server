@@ -12,3 +12,7 @@ target_compile_features(server PUBLIC cxx_std_17)
 add_executable(client client.cpp)
 target_link_libraries(client epollbook)
 target_compile_features(client PUBLIC cxx_std_17)
+
+add_executable(id_server id_server.cpp)
+target_link_libraries(id_server epollbook)
+target_compile_features(id_server PUBLIC cxx_std_17)

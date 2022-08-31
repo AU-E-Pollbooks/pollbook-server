@@ -63,10 +63,9 @@ private:
 
 public:
     /**
-     * Constructor; configures the service to run on the specified TCP port.
-     * (In the future this should probably be handled with a config file.)
+     * Constructs the service
      */
-    CheckinService(std::uint16_t port);
+    CheckinService();
     /**
      * Starts the service. This function gives control of the calling thread to
      * the ASIO io_context to start waiting for client connections, so callers

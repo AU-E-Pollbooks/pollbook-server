@@ -1,4 +1,5 @@
 #include "epollbook/checkin_service.hpp"
+#include "epollbook/config/config.hpp"
 #include "epollbook/log_utils.hpp"
 
 #include <spdlog/fmt/ostr.h>
@@ -9,9 +10,12 @@
 
 namespace epollbook {
 
-CheckinService::CheckinService(std::uint16_t port)
+CheckinService::CheckinService()
     : logger(spdlog::get(LogUtils::get_default_logger_name())),
-      connection_listener(network_io_context, asio::ip::tcp::endpoint(asio::ip::tcp::tcp::v4(), port)) {}
+      connection_listener(network_io_context,
+                          asio::ip::tcp::endpoint(
+                              asio::ip::tcp::tcp::v4(),
+                              Config::getUInt16(Config::SECTION_BASIC, Config::CHECKIN_SERVICE_PORT))) {}
 
 void CheckinService::do_accept() {
     connection_listener.async_accept(network_io_context,

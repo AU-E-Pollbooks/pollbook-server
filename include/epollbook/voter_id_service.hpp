@@ -13,7 +13,6 @@
 
 namespace epollbook {
 
-
 /**
  * A server class that provides a very simple "voter ID validation" service.
  * This is not intended to be production quality; it's just here to facilitate
@@ -44,10 +43,10 @@ private:
      */
     openssl::Signer signer;
     /**
-     * Maps a client IP address to a Verifier initialized with that client's
+     * Maps a client's unique ID to a Verifier initialized with that client's
      * public key.
      */
-    std::map<asio::ip::tcp::endpoint, openssl::Verifier> client_verifiers;
+    std::map<std::uint32_t, openssl::Verifier> client_verifiers;
     /**
      * Handler function for ASIO accept events.
      */
@@ -96,24 +95,30 @@ private:
      */
     bool validate_id_data(const std::vector<uint8_t>& id_data);
 
+    /**
+     * Loads a public key for a particular client from the PEM file that should
+     * correspond to a client with that ID, based on the configuration options
+     * client_keys_folder and client_key_file_prefix.
+     *
+     * @param client_id The numeric ID of the client
+     * @return true If the client's public key was loaded successfully, false
+     * if it was not found in the expected location
+     */
+    bool load_client_public_key(std::uint32_t client_id);
+
 public:
     /**
-     * The interval, in milliseconds, within which voter ID verification
-     * requests will be considered fresh enough to sign; in the future
-     * this should be set from a configuration file.
+     * The hash (digest) algorithm that will be used by this service for
+     * computing and verifying signatures. SHA256 is a common standard, so this
+     * shouldn't be surprising or need to be changed.
      */
-    const int request_freshness_interval = 5000;
+    const openssl::DigestAlgorithm signature_digest_algorithm = openssl::DigestAlgorithm::SHA256;
+
     /**
-     * Constructor; configures the service to run on the specified port, and
-     * loads the private key it will use to sign messages from the specified
-     * file.
-     *
-     * @param port The port the Voter ID service should listen on for incoming
-     * requests.
-     * @param private_key_filename The name/path to a PEM file containing the
-     * server's private key.
+     * Constructor, loads the private key the service will use to sign messages
+     * based on the configuration options.
      */
-    VoterIDService(std::uint16_t port, const std::string& private_key_filename);
+    VoterIDService();
 
     /**
      * Starts the service. This function gives control of the calling thread to

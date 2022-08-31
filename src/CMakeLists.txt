@@ -4,6 +4,7 @@ add_library(epollbook
     pollbook_client.cpp
     log_utils.cpp
     voter_id_service.cpp
+    $<TARGET_OBJECTS:config>
     $<TARGET_OBJECTS:openssl_wrapper>
     $<TARGET_OBJECTS:mutils-serialization>)
 

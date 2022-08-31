@@ -35,7 +35,8 @@ else()
 endif()
 
 # Process CMakeLists from each source-code directory
-add_subdirectory(src)
-add_subdirectory(src/openssl)
+add_subdirectory(src/config)
 add_subdirectory(src/mutils-serialization)
+add_subdirectory(src/openssl)
+add_subdirectory(src)
 add_subdirectory(apps)

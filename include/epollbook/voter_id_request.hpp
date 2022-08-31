@@ -13,6 +13,11 @@ namespace epollbook {
  */
 struct VoterIDRequest : public mutils::ByteRepresentable {
     /**
+     * A unique number identifying the client in this system. This is used (for
+     * now) instead of a hostname or IP address to match clients to public keys.
+     */
+    std::uint32_t client_id_num;
+    /**
      * The time, as a system-clock timestamp in milliseconds, when the client
      * issued this request. Requests are only valid if their timestamp is
      * relatively recent, although there will obviously be a small amount of
@@ -28,14 +33,16 @@ struct VoterIDRequest : public mutils::ByteRepresentable {
      * A signature on this message using the client's public key
      */
     std::vector<std::uint8_t> client_signature;
-    VoterIDRequest(std::uint64_t timestamp,
+    VoterIDRequest(std::uint32_t client_id_num,
+                   std::uint64_t timestamp,
                    const std::vector<std::uint8_t>& voter_id_data,
                    const std::vector<std::uint8_t>& client_signature)
-        : timestamp(timestamp),
+        : client_id_num(client_id_num),
+          timestamp(timestamp),
           voter_id_data(voter_id_data),
           client_signature(client_signature) {}
 
-    DEFAULT_SERIALIZATION_SUPPORT(VoterIDRequest, timestamp, voter_id_data, client_signature);
+    DEFAULT_SERIALIZATION_SUPPORT(VoterIDRequest, client_id_num, timestamp, voter_id_data, client_signature);
 };
 
 /**
@@ -44,20 +51,23 @@ struct VoterIDRequest : public mutils::ByteRepresentable {
  * from the ID service, which attests that the service has verified this ID.
  */
 struct VerifiedVoterID : public mutils::ByteRepresentable {
+    std::uint32_t client_id_num;
     std::uint64_t timestamp;
     std::vector<std::uint8_t> voter_id_data;
     std::vector<std::uint8_t> client_signature;
     std::vector<std::uint8_t> id_service_signature;
-    VerifiedVoterID(std::uint64_t timestamp,
+    VerifiedVoterID(std::uint32_t client_id_num,
+                    std::uint64_t timestamp,
                     const std::vector<std::uint8_t>& voter_id_data,
                     const std::vector<std::uint8_t>& client_signature,
                     const std::vector<std::uint8_t>& id_service_signature)
-        : timestamp(timestamp),
+        : client_id_num(client_id_num),
+          timestamp(timestamp),
           voter_id_data(voter_id_data),
           client_signature(client_signature),
           id_service_signature(id_service_signature) {}
 
-    DEFAULT_SERIALIZATION_SUPPORT(VerifiedVoterID, timestamp, voter_id_data, client_signature, id_service_signature);
+    DEFAULT_SERIALIZATION_SUPPORT(VerifiedVoterID, client_id_num, timestamp, voter_id_data, client_signature, id_service_signature);
 };
 
 }  // namespace epollbook

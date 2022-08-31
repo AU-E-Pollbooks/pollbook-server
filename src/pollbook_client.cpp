@@ -1,4 +1,5 @@
 #include "epollbook/pollbook_client.hpp"
+#include "epollbook/config/config.hpp"
 #include "epollbook/openssl/signature.hpp"
 
 #include <asio.hpp>
@@ -9,12 +10,21 @@
 
 namespace epollbook {
 
-PollbookClient::PollbookClient(const std::string& private_key_filename)
+PollbookClient::PollbookClient()
     : checkin_server_socket(network_io_context),
       id_server_socket(network_io_context),
       checkin_connected(false),
       id_connected(false),
-      private_key_signer(openssl::EnvelopeKey::from_pem_private(private_key_filename), openssl::DigestAlgorithm::SHA256) {}
+      private_key_signer(openssl::EnvelopeKey::from_pem_private(
+                             Config::getString(Config::SECTION_SECURITY, Config::LOCAL_PRIVATE_KEY)),
+                         openssl::DigestAlgorithm::SHA256) {}
+
+void PollbookClient::connect() {
+    connect_checkin_server(Config::getString(Config::SECTION_BASIC, Config::CHECKIN_SERVICE_HOST),
+                           Config::getString(Config::SECTION_BASIC, Config::CHECKIN_SERVICE_PORT));
+    connect_id_server(Config::getString(Config::SECTION_BASIC, Config::ID_SERVICE_HOST),
+                      Config::getString(Config::SECTION_BASIC, Config::ID_SERVICE_PORT));
+}
 
 void PollbookClient::connect_checkin_server(const std::string& hostname, const std::string& port) {
     asio::ip::tcp::resolver server_resolver(network_io_context);
