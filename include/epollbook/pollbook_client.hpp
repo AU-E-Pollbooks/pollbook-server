@@ -1,13 +1,26 @@
 #pragma once
 
+#include "checkin_request.hpp"
+#include "log_utils.hpp"
 #include "openssl/signature.hpp"
+#include "voter_id_request.hpp"
 
 #include <asio.hpp>
+#include <future>
+#include <string>
+#include <tuple>
 
 namespace epollbook {
 
+struct CheckinResult {
+    bool success;
+    std::string failure_reason;
+};
+
 class PollbookClient {
 private:
+    /** A pointer to the debug logger */
+    std::shared_ptr<spdlog::logger> logger;
     /** The IO Context to use for all network actions */
     asio::io_context network_io_context;
     /** The socket to use to communicate with the check-in server */
@@ -41,6 +54,34 @@ private:
      * use to sign outgoing messages.
      */
     openssl::Signer private_key_signer;
+    /**
+     * A Verifier object configured with the public key of the ID-verification
+     * service.
+     */
+    openssl::Verifier id_service_verifier;
+    /**
+     * A Verifier object configured with the public key of the check-in service.
+     */
+    openssl::Verifier checkin_service_verifier;
+    /**
+     * A Promise object for the currently-pending check-in request, if there is
+     * one. This is initialized when check_in_voter() is called, and it can be
+     * used to notify the caller of check_in_voter() when the check-in request
+     * is complete. Only one check-in request can be in progress at any time.
+     */
+    std::promise<CheckinResult> current_request_promise;
+    /**
+     * Contains (first name, middle name, last name) of the voter for the
+     * currently-pending check-in request, if there is one. This needs to be
+     * stored locally while waiting for the ID-verification request to complete,
+     * so it can be used to construct the check-in request message.
+     */
+    std::tuple<std::string, std::string, std::string> current_request_voter_name;
+    /**
+     * Contains the ID document number (e.g. driver's license number) of the
+     * voter for the currently-pending check-in request, if there is one.
+     */
+    std::uint32_t current_request_voter_id_number;
 
 public:
     /**
@@ -64,12 +105,28 @@ public:
      */
     void connect_id_server(const std::string& server_hostname, const std::string& server_port);
 
+    void start_size_read(bool on_id_server);
+
+    void start_id_response_read(std::size_t message_size);
+
+    void handle_id_response(const VerifiedVoterID& response);
+
+    void start_checkin_response_read(std::size_t message_size);
+
+    void handle_checkin_response(const CheckinResponse& response);
+
+    void start_id_request_write(std::uint64_t timestamp, const std::vector<std::uint8_t>& voter_id_data);
+
+    void start_checkin_request_write(const VerifiedVoterID& verified_id_response);
+
+    std::future<CheckinResult> check_in_voter(const std::string& first_name, const std::string& middle_name, const std::string& last_name,
+                                              std::uint32_t voter_id_document_number, const std::vector<uint8_t>& voter_id_data);
+
     /**
      * A simple demo method that sends a string to the server. This is a blocking,
      * synchronous method.
      */
     void send_string_message(const std::string& message);
-
 };
 
-}
+}  // namespace epollbook

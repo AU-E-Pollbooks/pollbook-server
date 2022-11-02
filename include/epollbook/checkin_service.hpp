@@ -1,5 +1,8 @@
 #pragma once
 
+#include "checkin_request.hpp"
+#include "openssl/signature.hpp"
+
 #include <spdlog/spdlog.h>
 #include <asio.hpp>
 
@@ -30,6 +33,22 @@ private:
      */
     std::map<asio::ip::tcp::endpoint, std::vector<uint8_t>> client_receive_buffers;
     /**
+     * Maps a client's unique ID to a Verifier initialized with that client's
+     * public key.
+     */
+    std::map<std::uint32_t, openssl::Verifier> client_verifiers;
+    /**
+     * A Verifier object configured with the public key of the ID-verification
+     * service.
+     */
+    openssl::Verifier id_service_verifier;
+    /**
+     * The Signer object the server uses to sign messages, which is configured
+     * with the service's signing key.
+     */
+    openssl::Signer signer;
+
+    /**
      * Handler function for ASIO accept events.
      */
     void handle_accept(const asio::error_code& error, asio::ip::tcp::socket incoming_socket);
@@ -59,9 +78,36 @@ private:
      * which will read the specified number of bytes. Assumes the server has
      * already read the initial 4 bytes to determine the size of the message.
      */
-    void start_body_read(const asio::ip::tcp::endpoint& client_ip, std::size_t size_of_message);
+    void start_payload_read(const asio::ip::tcp::endpoint& client_ip, std::size_t size_of_message);
+
+    /**
+     * Handles a single check-in request from a client, assuming it has already
+     * been read from a socket and deserialized. Called from the completion handler
+     * of the read initiated by start_payload_read().
+     * @param client_ip The IP address of the client that sent the request
+     * @param request The deserialized CheckinRequest object containing the client's message
+     */
+    void handle_checkin_request(const asio::ip::tcp::endpoint& client_ip, const CheckinRequest& request);
+
+    /**
+     * Loads a public key for a particular client from the PEM file that should
+     * correspond to a client with that ID, based on the configuration options
+     * client_keys_folder and client_key_file_prefix.
+     *
+     * @param client_id The numeric ID of the client
+     * @return true If the client's public key was loaded successfully, false
+     * if it was not found in the expected location
+     */
+    bool load_client_public_key(std::uint32_t client_id);
 
 public:
+    /**
+     * The hash (digest) algorithm that will be used by this service for
+     * computing and verifying signatures. SHA256 is a common standard, so this
+     * shouldn't be surprising or need to be changed.
+     */
+    const openssl::DigestAlgorithm signature_digest_algorithm = openssl::DigestAlgorithm::SHA256;
+
     /**
      * Constructs the service
      */

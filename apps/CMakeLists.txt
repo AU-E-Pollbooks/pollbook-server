@@ -16,3 +16,9 @@ target_compile_features(client PUBLIC cxx_std_17)
 add_executable(id_server id_server.cpp)
 target_link_libraries(id_server epollbook)
 target_compile_features(id_server PUBLIC cxx_std_17)
+
+add_custom_command(TARGET server POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/local-test-deployment ${CMAKE_CURRENT_BINARY_DIR}/local-test-deployment
+    DEPENDS client id_server
+    COMMENT "Copy local-test-deployment config files"
+    VERBATIM)

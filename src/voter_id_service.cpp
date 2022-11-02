@@ -45,34 +45,35 @@ void VoterIDService::start_size_read(asio::ip::tcp::endpoint client_ip) {
                      [this, client_ip, message_size](const asio::error_code& error, std::size_t bytes_read) {
                          if(!error) {
                              logger->debug("Client at {}: Message size is {} bytes", client_ip, message_size);
-                             start_body_read(client_ip, *message_size);
+                             start_payload_read(client_ip, *message_size);
                          } else if(error == asio::error::eof || error == asio::error::connection_aborted) {
                              logger->debug("Client at {} disconnected before sending message size", client_ip);
                              client_sockets.erase(client_ip);
+                         } else {
+                             logger->warn("Unexpected I/O error when reading a request message from client {}. Error: {}", client_ip, error.message());
                          }
                      });
 }
 
-void VoterIDService::start_body_read(const asio::ip::tcp::endpoint& client_ip, std::size_t size_of_message) {
+void VoterIDService::start_payload_read(const asio::ip::tcp::endpoint& client_ip, std::size_t size_of_message) {
     client_receive_buffers.emplace(client_ip, std::vector<uint8_t>(size_of_message));
     asio::async_read(client_sockets.at(client_ip),
                      asio::buffer(client_receive_buffers.at(client_ip)),
                      [this, client_ip](const asio::error_code& error, std::size_t bytes_transferred) {
-                         handle_read(client_ip, error, bytes_transferred);
+                         if(!error) {
+                             // We shouldn't have to check bytes_transferred because async_read was called in "read all" mode
+                             assert(bytes_transferred == client_receive_buffers.at(client_ip).size());
+                             logger->debug("Finished reading message of size {} from client at {}", client_receive_buffers.at(client_ip).size(), client_ip);
+                             // There's only one type of message the client could send, so deserialize and handle it
+                             auto request = mutils::from_bytes<VoterIDRequest>(nullptr, client_receive_buffers.at(client_ip).data());
+                             handle_validation_request(client_ip, *request);
+                         } else if(error == asio::error::eof || error == asio::error::connection_aborted) {
+                             logger->debug("Client at {} disconnected before sending entire message", client_ip);
+                             client_sockets.erase(client_ip);
+                         } else {
+                             logger->warn("Unexpected I/O error when reading a request message from client {}. Error: {}", client_ip, error.message());
+                         }
                      });
-}
-
-void VoterIDService::handle_read(const asio::ip::tcp::endpoint& client_ip, const asio::error_code& error, std::size_t bytes_transferred) {
-    if(!error) {
-        // We shouldn't have to check bytes_transferred because async_read was called in "read all" mode
-        assert(bytes_transferred == client_receive_buffers.at(client_ip).size());
-        logger->debug("Finished reading message of size {} from client at {}", client_receive_buffers.at(client_ip).size(), client_ip);
-        // There's only one type of message the client could send, so deserialize and handle it
-        auto request = mutils::from_bytes<VoterIDRequest>(nullptr, client_receive_buffers.at(client_ip).data());
-        handle_validation_request(client_ip, *request);
-    } else if(error == asio::error::eof || error == asio::error::connection_aborted) {
-        logger->debug("Client at {} disconnected before sending entire message", client_ip);
-    }
 }
 
 void VoterIDService::handle_validation_request(const asio::ip::tcp::endpoint& client_ip, const VoterIDRequest& request) {
@@ -81,44 +82,44 @@ void VoterIDService::handle_validation_request(const asio::ip::tcp::endpoint& cl
                                      current_time.time_since_epoch())
                                      .count();
     // Attempt to safely subtract two unsigned values without knowing which is bigger
-    int64_t time_difference = current_timestamp > request.timestamp
-                                  ? current_timestamp - request.timestamp
-                                  : request.timestamp - current_timestamp;
+    int64_t time_difference = current_timestamp > request.body.timestamp
+                                  ? current_timestamp - request.body.timestamp
+                                  : request.body.timestamp - current_timestamp;
     if(std::abs(time_difference) > Config::getUInt32(Config::SECTION_SECURITY, Config::REQUEST_FRESHNESS_INTERVAL)) {
         logger->warn("Rejected a voter ID validation request for being stale. Request timestamp was {} ms in the past", time_difference);
         return;
     }
-    if(!validate_id_data(request.voter_id_data)) {
+    if(!validate_id_data(request.body.voter_id_data)) {
         logger->warn("Rejected a voter ID validation request because the ID data was not valid.");
         return;
     }
     // Ensure the public key for this client is in memory
-    if(client_verifiers.find(request.client_id_num) == client_verifiers.end()) {
-        if(!load_client_public_key(request.client_id_num)) {
+    if(client_verifiers.find(request.body.client_id_num) == client_verifiers.end()) {
+        if(!load_client_public_key(request.body.client_id_num)) {
+            logger->warn("Could not load the public key for client number {}. Ignoring a voter ID validation request.", request.body.client_id_num);
             return;
         }
     }
     // Validate the client's signature
-    openssl::Verifier& verifier = client_verifiers.at(request.client_id_num);
+    std::vector<std::uint8_t> request_body_bytes(mutils::bytes_size(request.body));
+    mutils::to_bytes(request.body, request_body_bytes.data());
+    openssl::Verifier& verifier = client_verifiers.at(request.body.client_id_num);
     verifier.init();
-    verifier.add_bytes(&request.client_id_num, sizeof(request.client_id_num));
-    verifier.add_bytes(&request.timestamp, sizeof(request.timestamp));
-    verifier.add_bytes(request.voter_id_data.data(), request.voter_id_data.size());
+    verifier.add_bytes(request_body_bytes.data(), request_body_bytes.size());
     if(!verifier.finalize(request.client_signature)) {
         logger->warn("Rejected a voter ID validation request because the client's signature was invalid.");
         return;
     }
 
     // Sign the validation request to assert that it is valid
+    // The request was already serialized, in the receive buffer, so there's no need to serialize it again
+    const std::vector<std::uint8_t>& request_bytes = client_receive_buffers.at(client_ip);
     signer.init();
-    signer.add_bytes(&request.client_id_num, sizeof(request.client_id_num));
-    signer.add_bytes(&request.timestamp, sizeof(request.timestamp));
-    signer.add_bytes(request.voter_id_data.data(), request.voter_id_data.size());
-    signer.add_bytes(request.client_signature.data(), request.client_signature.size());
+    signer.add_bytes(request_bytes.data(), request_bytes.size());
     std::vector<std::uint8_t> signature = signer.finalize();
 
     // Send it back in a response. For now, the write is synchronous, since we don't expect it to take very long.
-    VerifiedVoterID response(request.client_id_num, request.timestamp, request.voter_id_data, request.client_signature, std::move(signature));
+    VerifiedVoterID response(request, std::move(signature));
     std::vector<uint8_t> response_bytes(mutils::bytes_size(response));
     mutils::to_bytes(response, response_bytes.data());
     asio::write(client_sockets.at(client_ip), asio::buffer(response_bytes));
