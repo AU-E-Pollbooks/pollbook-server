@@ -44,7 +44,7 @@ void VoterIDService::start_size_read(asio::ip::tcp::endpoint client_ip) {
                      asio::buffer(&(*message_size), sizeof(std::size_t)),
                      [this, client_ip, message_size](const asio::error_code& error, std::size_t bytes_read) {
                          if(!error) {
-                             logger->debug("Client at {}: Message size is {} bytes", client_ip, message_size);
+                             logger->debug("Client at {}: Message size is {} bytes", client_ip, *message_size);
                              start_payload_read(client_ip, *message_size);
                          } else if(error == asio::error::eof || error == asio::error::connection_aborted) {
                              logger->debug("Client at {} disconnected before sending message size", client_ip);
@@ -110,6 +110,7 @@ void VoterIDService::handle_validation_request(const asio::ip::tcp::endpoint& cl
         logger->warn("Rejected a voter ID validation request because the client's signature was invalid.");
         return;
     }
+    logger->info("Approved a voter ID validation request from client #{} at {}", request.body.client_id_num, client_ip);
 
     // Sign the validation request to assert that it is valid
     // The request was already serialized, in the receive buffer, so there's no need to serialize it again
@@ -120,8 +121,11 @@ void VoterIDService::handle_validation_request(const asio::ip::tcp::endpoint& cl
 
     // Send it back in a response. For now, the write is synchronous, since we don't expect it to take very long.
     VerifiedVoterID response(request, std::move(signature));
-    std::vector<uint8_t> response_bytes(mutils::bytes_size(response));
-    mutils::to_bytes(response, response_bytes.data());
+    std::size_t response_size = mutils::bytes_size(response);
+    std::vector<uint8_t> response_bytes(response_size + sizeof(response_size));
+    mutils::to_bytes(response_size, response_bytes.data());
+    mutils::to_bytes(response, response_bytes.data() + sizeof(response_size));
+    logger->debug("Sending a response of size {} to client at {}", response_size, client_ip);
     asio::write(client_sockets.at(client_ip), asio::buffer(response_bytes));
 }
 
@@ -137,6 +141,7 @@ bool VoterIDService::load_client_public_key(std::uint32_t client_id) {
     try {
         openssl::Verifier client_verifier(openssl::EnvelopeKey::from_pem_public(key_file_path), signature_digest_algorithm);
         client_verifiers.emplace(client_id, std::move(client_verifier));
+        logger->debug("Loaded public key for client #{} from file {}", client_id, key_file_path);
     } catch(openssl::openssl_error& err) {
         logger->error("Could not load public key for client {} from file {}. OpenSSL error: {}", client_id, key_file_path, err.what());
         return false;

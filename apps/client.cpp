@@ -15,7 +15,7 @@ int main(int argc, char** argv) {
     // Read the configuration file
     epollbook::Config::initialize(config_file);
     // Set up the logger
-    epollbook::LogUtils::create_default_logger("client_log");
+    epollbook::LogUtils::create_default_logger("client_log", spdlog::level::trace);
 
     epollbook::PollbookClient client;
     client.connect();

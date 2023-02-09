@@ -23,6 +23,8 @@ private:
     std::shared_ptr<spdlog::logger> logger;
     /** The IO Context to use for all network actions */
     asio::io_context network_io_context;
+    /** Work guard for the network IO context, to keep its run() thread alive while the client is idle */
+    asio::executor_work_guard<asio::io_context::executor_type> network_work_guard;
     /** The socket to use to communicate with the check-in server */
     asio::ip::tcp::socket checkin_server_socket;
     /** The socket used to communicate with the voter-ID server */
@@ -82,12 +84,16 @@ private:
      * voter for the currently-pending check-in request, if there is one.
      */
     std::uint32_t current_request_voter_id_number;
+    /** The thread that executes asynchronous network operations */
+    std::thread network_thread;
 
 public:
     /**
      * Constructs a new PollbookClient that is not connected to any server.
      */
     PollbookClient();
+
+    ~PollbookClient();
     /**
      * Connects the client to both the checkin server and the ID server, using
      * the addresses and ports configured in the configuration file.

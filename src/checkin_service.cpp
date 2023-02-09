@@ -2,7 +2,6 @@
 #include "epollbook/config/config.hpp"
 #include "epollbook/log_utils.hpp"
 
-#include <spdlog/fmt/ostr.h>
 #include <asio.hpp>
 
 #include <array>
@@ -116,6 +115,7 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
             if(std::abs(time_difference) < Config::getUInt32(Config::SECTION_SECURITY, Config::REQUEST_FRESHNESS_INTERVAL)) {
                 // If the timestamp is recent enough, check if the voter has been checked in yet
                 // (still to do)
+                logger->debug("Accepted a check-in request for voter {} {} {} from client {}", request.body.first_name, request.body.middle_name, request.body.last_name, request.body.client_id_num);
                 accept = true;
             } else {
                 logger->debug("Rejecting client {}'s check-in request for {} {} {} because its timestamp, {}, was older than {} ms",
@@ -136,12 +136,17 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
     // Sign the body of the response message with the service's key
     std::vector<std::uint8_t> response_body_bytes(mutils::bytes_size(response_body));
     mutils::to_bytes(response_body, response_body_bytes.data());
+    logger->trace("Signing these bytes: {}", spdlog::to_hex(response_body_bytes));
     signer.init();
     signer.add_bytes(response_body_bytes.data(), response_body_bytes.size());
     // Serialize and send the response message, including the signature
     CheckinResponse response(std::move(response_body), signer.finalize());
-    std::vector<uint8_t> response_bytes(mutils::bytes_size(response));
-    mutils::to_bytes(response, response_bytes.data());
+    logger->trace("Signature: {}", spdlog::to_hex(response.checkin_service_signature));
+    std::size_t response_size = mutils::bytes_size(response);
+    std::vector<uint8_t> response_bytes(response_size + sizeof(response_size));
+    mutils::to_bytes(response_size, response_bytes.data());
+    mutils::to_bytes(response, response_bytes.data() + response_size);
+    logger->debug("Sending a response of size {} to client at {}", response_size, client_ip);
     asio::write(client_sockets.at(client_ip), asio::buffer(response_bytes));
 }
 

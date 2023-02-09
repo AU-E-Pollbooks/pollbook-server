@@ -37,12 +37,6 @@ Config::Config(const std::string& config_file_path) {
     if(parsed_config_file.find(SECTION_SECURITY) == parsed_config_file.end()) {
         throw std::logic_error("Configuration file error: Required section [" + SECTION_SECURITY + "] not found");
     }
-    if(!hasKey(SECTION_BASIC, CHECKIN_SERVICE_HOST)) {
-        throw std::logic_error("Configuration file error: Required key " + CHECKIN_SERVICE_HOST + " not found");
-    }
-    if(!hasKey(SECTION_BASIC, CHECKIN_SERVICE_PORT)) {
-        throw std::logic_error("Configuration file error: Required key " + CHECKIN_SERVICE_PORT + " not found");
-    }
     if(!hasKey(SECTION_SECURITY, LOCAL_PRIVATE_KEY)) {
         throw std::logic_error("Configuration file error: Required key " + LOCAL_PRIVATE_KEY + " not found");
     }

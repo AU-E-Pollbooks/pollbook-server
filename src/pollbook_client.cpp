@@ -16,6 +16,7 @@ namespace epollbook {
 
 PollbookClient::PollbookClient()
     : logger(spdlog::get(LogUtils::get_default_logger_name())),
+      network_work_guard(network_io_context.get_executor()),
       checkin_server_socket(network_io_context),
       id_server_socket(network_io_context),
       checkin_connected(false),
@@ -28,13 +29,21 @@ PollbookClient::PollbookClient()
                           openssl::DigestAlgorithm::SHA256),
       checkin_service_verifier(openssl::EnvelopeKey::from_pem_public(
                                    Config::getString(Config::SECTION_SECURITY, Config::CHECKIN_SERVICE_PUBLIC_KEY)),
-                               openssl::DigestAlgorithm::SHA256) {}
+                               openssl::DigestAlgorithm::SHA256),
+      network_thread([this]() { network_io_context.run(); }) {}
+
+PollbookClient::~PollbookClient() {
+    // Shut down the IO context so the network thread can return
+    network_io_context.stop();
+    network_thread.join();
+}
 
 void PollbookClient::connect() {
     connect_checkin_server(Config::getString(Config::SECTION_BASIC, Config::CHECKIN_SERVICE_HOST),
                            Config::getString(Config::SECTION_BASIC, Config::CHECKIN_SERVICE_PORT));
     connect_id_server(Config::getString(Config::SECTION_BASIC, Config::ID_SERVICE_HOST),
                       Config::getString(Config::SECTION_BASIC, Config::ID_SERVICE_PORT));
+    logger->info("Client connected to both check-in and ID services");
 }
 
 void PollbookClient::connect_checkin_server(const std::string& hostname, const std::string& port) {
@@ -87,7 +96,9 @@ void PollbookClient::start_size_read(bool on_id_server) {
                          asio::buffer(&(*message_size), sizeof(std::size_t)),
                          [this, message_size](const asio::error_code& error, std::size_t bytes_read) {
                              if(!error) {
-                                 logger->debug("Message received from ID service: Message size is {} bytes", *message_size);
+                                 logger->debug("Read {} bytes from socket into a std::size_t", bytes_read);
+                                 assert(bytes_read == sizeof(std::size_t));
+                                 logger->debug("Message received from ID service, size {} bytes", *message_size);
                                  start_id_response_read(*message_size);
                              } else if(error == asio::error::eof || error == asio::error::connection_aborted) {
                                  logger->error("ID service disconnected before sending message size");
@@ -102,7 +113,9 @@ void PollbookClient::start_size_read(bool on_id_server) {
                          asio::buffer(&(*message_size), sizeof(std::size_t)),
                          [this, message_size](const asio::error_code& error, std::size_t bytes_read) {
                              if(!error) {
-                                 logger->debug("Message received from checkin service: Message size is {} bytes", *message_size);
+                                 logger->debug("Read {} bytes from socket into a std::size_t", bytes_read);
+                                 assert(bytes_read == sizeof(std::size_t));
+                                 logger->debug("Message received from checkin service, size {} bytes", *message_size);
                                  start_checkin_response_read(*message_size);
                              } else if(error == asio::error::eof || error == asio::error::connection_aborted) {
                                  logger->error("Checkin service disconnected before sending message size");
@@ -155,8 +168,8 @@ void PollbookClient::start_checkin_request_write(const VerifiedVoterID& verified
                                           current_time.time_since_epoch())
                                           .count();
     CheckinRequest::Body request_body(my_id, current_timestamp, std::get<2>(current_request_voter_name),
-                           std::get<0>(current_request_voter_name), std::get<1>(current_request_voter_name),
-                           current_request_voter_id_number, verified_id_response);
+                                      std::get<0>(current_request_voter_name), std::get<1>(current_request_voter_name),
+                                      current_request_voter_id_number, verified_id_response);
     // Serialize the body of the message and sign the bytes
     std::vector<std::uint8_t> request_body_bytes(mutils::bytes_size(request_body));
     mutils::to_bytes(request_body, request_body_bytes.data());
@@ -205,12 +218,15 @@ void PollbookClient::handle_checkin_response(const CheckinResponse& response) {
     // Serialize the body of the response to verify the signature
     std::vector<std::uint8_t> response_body_bytes(mutils::bytes_size(response.body));
     mutils::to_bytes(response.body, response_body_bytes.data());
+    logger->trace("Verifying these bytes from the check-in server: {}", spdlog::to_hex(response_body_bytes));
+    logger->trace("Against signature: {}", spdlog::to_hex(response.checkin_service_signature));
     checkin_service_verifier.init();
     checkin_service_verifier.add_bytes(response_body_bytes.data(), response_body_bytes.size());
     bool verified = checkin_service_verifier.finalize(response.checkin_service_signature);
     if(!verified) {
-        current_request_promise.set_value({false, "Invalid signature on check-in service's response"});
-    } else if (response.body.approved) {
+        std::string reason_string = openssl::get_error_string(ERR_get_error(), "");
+        current_request_promise.set_value({false, "Invalid signature on check-in service's response. OpenSSL error: " + reason_string});
+    } else if(response.body.approved) {
         current_request_promise.set_value({true, ""});
     } else {
         current_request_promise.set_value({false, "Check-in service rejected the request"});
