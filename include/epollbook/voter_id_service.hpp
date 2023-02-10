@@ -19,6 +19,13 @@ namespace epollbook {
  * testing the other parts of the check-in service.
  */
 class VoterIDService {
+public:
+    /**
+     * The hash (digest) algorithm that will be used by this service for
+     * computing and verifying signatures. SHA256 is a common standard, so this
+     * shouldn't be surprising or need to be changed.
+     */
+    const openssl::DigestAlgorithm signature_digest_algorithm = openssl::DigestAlgorithm::SHA256;
 private:
     /** A pointer to the debug logger */
     std::shared_ptr<spdlog::logger> logger;
@@ -100,12 +107,6 @@ private:
     bool load_client_public_key(std::uint32_t client_id);
 
 public:
-    /**
-     * The hash (digest) algorithm that will be used by this service for
-     * computing and verifying signatures. SHA256 is a common standard, so this
-     * shouldn't be surprising or need to be changed.
-     */
-    const openssl::DigestAlgorithm signature_digest_algorithm = openssl::DigestAlgorithm::SHA256;
 
     /**
      * Constructor, loads the private key the service will use to sign messages

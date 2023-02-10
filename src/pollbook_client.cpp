@@ -157,7 +157,8 @@ void PollbookClient::handle_id_response(const VerifiedVoterID& response) {
     if(verified) {
         start_checkin_request_write(response);
     } else {
-        current_request_promise.set_value({false, "Invalid signature from the ID verification service on the voter's ID"});
+        current_request_promise.set_value({false, "Invalid signature from the ID verification service on the voter's ID. OpenSSL error: " +
+                                                      openssl::get_error_string(ERR_get_error(), "")});
     }
 }
 
@@ -218,14 +219,12 @@ void PollbookClient::handle_checkin_response(const CheckinResponse& response) {
     // Serialize the body of the response to verify the signature
     std::vector<std::uint8_t> response_body_bytes(mutils::bytes_size(response.body));
     mutils::to_bytes(response.body, response_body_bytes.data());
-    logger->trace("Verifying these bytes from the check-in server: {}", spdlog::to_hex(response_body_bytes));
-    logger->trace("Against signature: {}", spdlog::to_hex(response.checkin_service_signature));
     checkin_service_verifier.init();
     checkin_service_verifier.add_bytes(response_body_bytes.data(), response_body_bytes.size());
     bool verified = checkin_service_verifier.finalize(response.checkin_service_signature);
     if(!verified) {
-        std::string reason_string = openssl::get_error_string(ERR_get_error(), "");
-        current_request_promise.set_value({false, "Invalid signature on check-in service's response. OpenSSL error: " + reason_string});
+        current_request_promise.set_value({false, "Invalid signature on check-in service's response. OpenSSL error: " +
+                                                      openssl::get_error_string(ERR_get_error(), "")});
     } else if(response.body.approved) {
         current_request_promise.set_value({true, ""});
     } else {

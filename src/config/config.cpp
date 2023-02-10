@@ -13,6 +13,7 @@ const std::string Config::ID_SERVICE_HOST = "id_service_host";
 const std::string Config::ID_SERVICE_PORT = "id_service_port";
 const std::string Config::CHECKIN_SERVICE_HOST = "checkin_service_host";
 const std::string Config::CHECKIN_SERVICE_PORT = "checkin_service_port";
+const std::string Config::LOG_LEVEL = "log_level";
 const std::string Config::SECTION_SECURITY = "Security";
 const std::string Config::LOCAL_PRIVATE_KEY = "private_key";
 const std::string Config::ID_SERVICE_PUBLIC_KEY = "id_service_public_key";

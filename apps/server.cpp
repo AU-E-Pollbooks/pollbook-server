@@ -15,7 +15,13 @@ int main(int argc, char** argv) {
     // Read the configuration file
     epollbook::Config::initialize(config_file);
     // Set up the logger
-    epollbook::LogUtils::create_default_logger("server_log", spdlog::level::trace);
+    spdlog::level::level_enum log_level;
+    if(epollbook::Config::getInstance().hasKey(epollbook::Config::SECTION_BASIC, epollbook::Config::LOG_LEVEL)) {
+        log_level = spdlog::level::from_str(epollbook::Config::getString(epollbook::Config::SECTION_BASIC, epollbook::Config::LOG_LEVEL));
+    } else {
+        log_level = spdlog::level::debug;
+    }
+    epollbook::LogUtils::create_default_logger("server_log", log_level);
     // Create a service object
     epollbook::CheckinService service;
     // Start it running

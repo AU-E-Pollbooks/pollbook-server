@@ -101,6 +101,8 @@ public:
     static const std::string CHECKIN_SERVICE_HOST;
     /** The port on which to connect to the check-in service */
     static const std::string CHECKIN_SERVICE_PORT;
+    /** The logging level to use for the default logger (trace, debug, info, warning, critical, error) */
+    static const std::string LOG_LEVEL;
 
     static const std::string SECTION_SECURITY;
     /** The path to a file containing the private key for the running program (client or sever) */

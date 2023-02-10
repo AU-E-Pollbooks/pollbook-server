@@ -118,7 +118,6 @@ void VoterIDService::handle_validation_request(const asio::ip::tcp::endpoint& cl
     signer.init();
     signer.add_bytes(request_bytes.data(), request_bytes.size());
     std::vector<std::uint8_t> signature = signer.finalize();
-
     // Send it back in a response. For now, the write is synchronous, since we don't expect it to take very long.
     VerifiedVoterID response(request, std::move(signature));
     std::size_t response_size = mutils::bytes_size(response);
@@ -152,6 +151,7 @@ bool VoterIDService::load_client_public_key(std::uint32_t client_id) {
 void VoterIDService::run() {
     // Post the first asynchronous accept
     do_accept();
+    logger->info("ID Service started on port {}", Config::getUInt16(Config::SECTION_BASIC, Config::ID_SERVICE_PORT));
     network_io_context.run();
 }
 

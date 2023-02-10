@@ -136,23 +136,24 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
     // Sign the body of the response message with the service's key
     std::vector<std::uint8_t> response_body_bytes(mutils::bytes_size(response_body));
     mutils::to_bytes(response_body, response_body_bytes.data());
-    logger->trace("Signing these bytes: {}", spdlog::to_hex(response_body_bytes));
     signer.init();
     signer.add_bytes(response_body_bytes.data(), response_body_bytes.size());
     // Serialize and send the response message, including the signature
     CheckinResponse response(std::move(response_body), signer.finalize());
-    logger->trace("Signature: {}", spdlog::to_hex(response.checkin_service_signature));
     std::size_t response_size = mutils::bytes_size(response);
     std::vector<uint8_t> response_bytes(response_size + sizeof(response_size));
     mutils::to_bytes(response_size, response_bytes.data());
-    mutils::to_bytes(response, response_bytes.data() + response_size);
+    mutils::to_bytes(response, response_bytes.data() + sizeof(response_size));
     logger->debug("Sending a response of size {} to client at {}", response_size, client_ip);
     asio::write(client_sockets.at(client_ip), asio::buffer(response_bytes));
+    // Enqueue another read operation for the next message from this client (if any)
+    start_size_read(client_ip);
 }
 
 void CheckinService::run() {
     // Post the first asynchronous accept
     do_accept();
+    logger->info("Check-in service started on port {}", Config::getUInt16(Config::SECTION_BASIC, Config::CHECKIN_SERVICE_PORT));
     network_io_context.run();
 }
 
