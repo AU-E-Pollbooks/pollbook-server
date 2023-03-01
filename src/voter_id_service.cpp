@@ -89,7 +89,8 @@ void VoterIDService::handle_validation_request(const asio::ip::tcp::endpoint& cl
         logger->warn("Rejected a voter ID validation request for being stale. Request timestamp was {} ms in the past", time_difference);
         return;
     }
-    if(!validate_id_data(request.body.voter_id_data)) {
+    std::uint32_t voter_unique_id = validate_and_match_id_data(request.body.voter_id_data);
+    if(voter_unique_id == INVALID_VOTER_ID) {
         logger->warn("Rejected a voter ID validation request because the ID data was not valid.");
         return;
     }
@@ -110,16 +111,18 @@ void VoterIDService::handle_validation_request(const asio::ip::tcp::endpoint& cl
         logger->warn("Rejected a voter ID validation request because the client's signature was invalid.");
         return;
     }
-    logger->info("Approved a voter ID validation request from client #{} at {}", request.body.client_id_num, client_ip);
+    logger->info("Approved a voter ID validation request from client #{} at {}, voter's UID is {}", request.body.client_id_num, client_ip, voter_unique_id);
 
-    // Sign the validation request to assert that it is valid
+    // Sign the validation request and the unique voter ID
     // The request was already serialized, in the receive buffer, so there's no need to serialize it again
     const std::vector<std::uint8_t>& request_bytes = client_receive_buffers.at(client_ip);
     signer.init();
     signer.add_bytes(request_bytes.data(), request_bytes.size());
+    // mutils::to_bytes on a std::uint32_t will just memcpy it, so there's no need to "serialize" this
+    signer.add_bytes(&voter_unique_id, sizeof(voter_unique_id));
     std::vector<std::uint8_t> signature = signer.finalize();
     // Send it back in a response. For now, the write is synchronous, since we don't expect it to take very long.
-    VerifiedVoterID response(request, std::move(signature));
+    VerifiedVoterID response(request, voter_unique_id, std::move(signature));
     std::size_t response_size = mutils::bytes_size(response);
     std::vector<uint8_t> response_bytes(response_size + sizeof(response_size));
     mutils::to_bytes(response_size, response_bytes.data());
@@ -128,8 +131,10 @@ void VoterIDService::handle_validation_request(const asio::ip::tcp::endpoint& cl
     asio::write(client_sockets.at(client_ip), asio::buffer(response_bytes));
 }
 
-bool VoterIDService::validate_id_data(const std::vector<std::uint8_t>& id_data) {
-    return true;
+std::uint32_t VoterIDService::validate_and_match_id_data(const std::vector<std::uint8_t>& id_data) {
+    std::uint32_t desired_id_number;
+    std::memcpy(&desired_id_number, id_data.data(), sizeof(std::uint32_t));
+    return desired_id_number;
 }
 
 bool VoterIDService::load_client_public_key(std::uint32_t client_id) {

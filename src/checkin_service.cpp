@@ -47,7 +47,7 @@ void CheckinService::start_size_read(asio::ip::tcp::endpoint client_ip) {
                      asio::buffer(&(*message_size), sizeof(std::size_t)),
                      [this, client_ip, message_size](const asio::error_code& error, std::size_t bytes_read) {
                          if(!error) {
-                             logger->debug("Client at {}: Message size is {} bytes", client_ip, message_size);
+                             logger->debug("Client at {}: Message size is {} bytes", client_ip, *message_size);
                              start_payload_read(client_ip, *message_size);
                          } else if(error == asio::error::eof || error == asio::error::connection_aborted) {
                              logger->debug("Client at {} disconnected before sending message size", client_ip);
@@ -102,10 +102,13 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
     bool accept = false;
     // If the client's signature was valid, verify the ID service's signature
     if(client_valid) {
-        std::vector<std::uint8_t> verify_request_bytes(mutils::bytes_size(request.body.verified_id_message.presented_id));
-        mutils::to_bytes(request.body.verified_id_message.presented_id, verify_request_bytes.data());
+        std::size_t id_request_size = mutils::bytes_size(request.body.verified_id_message.presented_id);
+        std::size_t voter_uid_size = mutils::bytes_size(request.body.verified_id_message.voter_unique_id);
+        std::vector<std::uint8_t> id_message_bytes(id_request_size + voter_uid_size);
+        mutils::to_bytes(request.body.verified_id_message.presented_id, id_message_bytes.data());
+        mutils::to_bytes(request.body.verified_id_message.voter_unique_id, id_message_bytes.data() + id_request_size);
         id_service_verifier.init();
-        id_service_verifier.add_bytes(verify_request_bytes.data(), verify_request_bytes.size());
+        id_service_verifier.add_bytes(id_message_bytes.data(), id_message_bytes.size());
         bool id_server_valid = id_service_verifier.finalize(request.body.verified_id_message.id_service_signature);
         // If the ID service's signature was valid, check the timestamp
         if(id_server_valid) {
@@ -115,24 +118,25 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
             if(std::abs(time_difference) < Config::getUInt32(Config::SECTION_SECURITY, Config::REQUEST_FRESHNESS_INTERVAL)) {
                 // If the timestamp is recent enough, check if the voter has been checked in yet
                 // (still to do)
-                logger->debug("Accepted a check-in request for voter {} {} {} from client {}", request.body.first_name, request.body.middle_name, request.body.last_name, request.body.client_id_num);
+                logger->debug("Accepted a check-in request for voter {} {} {} (UID {}) from client {}", request.body.first_name, request.body.middle_name, request.body.last_name, request.body.voter_unique_id, request.body.client_id_num);
                 accept = true;
             } else {
-                logger->debug("Rejecting client {}'s check-in request for {} {} {} because its timestamp, {}, was older than {} ms",
-                              request.body.client_id_num, request.body.first_name, request.body.middle_name, request.body.last_name, request.body.timestamp, Config::getUInt32(Config::SECTION_SECURITY, Config::REQUEST_FRESHNESS_INTERVAL));
+                logger->debug("Rejecting client {}'s check-in request for {} {} {} (UID {}) because its timestamp, {}, was older than {} ms",
+                              request.body.client_id_num, request.body.first_name, request.body.middle_name, request.body.last_name,
+                              request.body.voter_unique_id, request.body.timestamp, Config::getUInt32(Config::SECTION_SECURITY, Config::REQUEST_FRESHNESS_INTERVAL));
             }
         } else {
-            logger->debug("Rejecting client {}'s check-in request for {} {} {} because the signature on the ID verification was invalid",
-                          request.body.client_id_num, request.body.first_name, request.body.middle_name, request.body.last_name);
+            logger->debug("Rejecting client {}'s check-in request for {} {} {} (UID {}) because the signature on the ID verification was invalid",
+                          request.body.client_id_num, request.body.first_name, request.body.middle_name, request.body.last_name, request.body.voter_unique_id);
         }
     } else {
-        logger->debug("Rejecting client {}'s check-in request for {} {} {} because the client's signature on the message was invalid",
-                      request.body.client_id_num, request.body.first_name, request.body.middle_name, request.body.last_name);
+        logger->debug("Rejecting client {}'s check-in request for {} {} {} (UID {}) because the client's signature on the message was invalid",
+                      request.body.client_id_num, request.body.first_name, request.body.middle_name, request.body.last_name, request.body.voter_unique_id);
     }
 
     CheckinResponse::Body response_body(accept, request.body.client_id_num,
                                         current_timestamp, request.body.last_name, request.body.first_name,
-                                        request.body.middle_name, request.body.id_document_number);
+                                        request.body.middle_name, request.body.voter_unique_id);
     // Sign the body of the response message with the service's key
     std::vector<std::uint8_t> response_body_bytes(mutils::bytes_size(response_body));
     mutils::to_bytes(response_body, response_body_bytes.data());

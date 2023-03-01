@@ -39,32 +39,31 @@ struct CheckinRequest : public mutils::ByteRepresentable {
         /** The voter's middle name */
         std::string middle_name;
         /**
-         * The unique identifying number of the voter's ID document, e.g. the license
-         * number of a Georgia driver's license. This should match the ID document that
-         * was presented to and approved by the voter ID service.
+         * The unique ID number identifying this voter within the pollbook system, as
+         * agreed upon by the pollbook system and the voter ID service.
          */
-        std::uint32_t id_document_number;
+        std::uint32_t voter_unique_id;
         /**
          * The verification message the client received from the voter ID service,
          * asserting that this voter has a valid ID. It should contain a valid
-         * signature from the voter ID service and voter ID data that matches
-         * the voter named in this checkin request.
+         * signature from the voter ID service and the same unique voter ID as the
+         * one in this check-in request.
          */
         VerifiedVoterID verified_id_message;
         Body(std::uint32_t client_id_num, std::uint64_t timestamp,
              const std::string& last_name,
              const std::string& first_name,
              const std::string& middle_name,
-             std::uint32_t id_document_number,
+             std::uint32_t voter_unique_id,
              const VerifiedVoterID& verified_id_message)
             : client_id_num(client_id_num),
               timestamp(timestamp),
               last_name(last_name),
               first_name(first_name),
               middle_name(middle_name),
-              id_document_number(id_document_number),
+              voter_unique_id(voter_unique_id),
               verified_id_message(verified_id_message) {}
-        DEFAULT_SERIALIZATION_SUPPORT(Body, client_id_num, timestamp, last_name, first_name, middle_name, id_document_number, verified_id_message);
+        DEFAULT_SERIALIZATION_SUPPORT(Body, client_id_num, timestamp, last_name, first_name, middle_name, voter_unique_id, verified_id_message);
     };
 
     Body body;
@@ -108,26 +107,25 @@ struct CheckinResponse : public mutils::ByteRepresentable {
         /** The voter's middle name */
         std::string middle_name;
         /**
-         * The unique identifying number of the voter's ID document, e.g. the license
-         * number of a Georgia driver's license. This should match the ID document that
-         * was presented to and approved by the voter ID service.
+         * The unique ID number identifying this voter within the pollbook system, as
+         * agreed upon by the pollbook system and the voter ID service.
          */
-        std::uint32_t id_document_number;
+        std::uint32_t voter_unique_id;
         Body(bool approved,
              std::uint32_t requesting_client_id,
              std::uint64_t timestamp,
              const std::string& last_name,
              const std::string& first_name,
              const std::string& middle_name,
-             std::uint32_t id_document_number)
+             std::uint32_t voter_unique_id)
             : approved(approved),
               requesting_client_id(requesting_client_id),
               timestamp(timestamp),
               last_name(last_name),
               first_name(first_name),
               middle_name(middle_name),
-              id_document_number(id_document_number) {}
-        DEFAULT_SERIALIZATION_SUPPORT(Body, approved, requesting_client_id, timestamp, last_name, first_name, middle_name, id_document_number);
+              voter_unique_id(voter_unique_id) {}
+        DEFAULT_SERIALIZATION_SUPPORT(Body, approved, requesting_client_id, timestamp, last_name, first_name, middle_name, voter_unique_id);
     };
     Body body;
     /**

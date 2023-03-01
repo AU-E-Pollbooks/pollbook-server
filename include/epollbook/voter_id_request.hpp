@@ -62,8 +62,10 @@ struct VoterIDRequest : public mutils::ByteRepresentable {
 
 /**
  * A message from the Voter ID service sent in response to a voter ID request.
- * Contains a copy of the VoterIDRequest message plus a signature on it
- * from the ID service, which attests that the service has verified this ID.
+ * Contains a copy of the VoterIDRequest message, the unique ID number of the
+ * voter that this ID document corresponds to, and a signature on everything
+ * from the ID service, which attests that the service has verified the ID
+ * document and matched it to a specific voter known to the pollbook system.
  */
 struct VerifiedVoterID : public mutils::ByteRepresentable {
     /**
@@ -73,16 +75,26 @@ struct VerifiedVoterID : public mutils::ByteRepresentable {
      */
     VoterIDRequest presented_id;
     /**
+     * A unique ID number identifying this voter within the pollbook system.
+     * Voter unique IDs should be pre-agreed-upon by the pollbook system and
+     * the ID-verification system, so that the ID-verification system can
+     * clearly match identification documents with specific voters in the
+     * pollbook's registered voters database.
+     */
+    std::uint32_t voter_unique_id;
+    /**
      * A signature on the entire message, including the client's signature, using
      * the ID service's public key.
      */
     std::vector<std::uint8_t> id_service_signature;
     VerifiedVoterID(const VoterIDRequest& id_request,
+                    std::uint32_t voter_uid,
                     const std::vector<std::uint8_t>& id_service_signature)
         : presented_id(id_request),
+          voter_unique_id(voter_uid),
           id_service_signature(id_service_signature) {}
 
-    DEFAULT_SERIALIZATION_SUPPORT(VerifiedVoterID, presented_id, id_service_signature);
+    DEFAULT_SERIALIZATION_SUPPORT(VerifiedVoterID, presented_id, voter_unique_id, id_service_signature);
 };
 
 }  // namespace epollbook

@@ -149,8 +149,10 @@ void PollbookClient::start_id_response_read(std::size_t message_size) {
 
 void PollbookClient::handle_id_response(const VerifiedVoterID& response) {
     // Verify the signature, then asynchronously schedule a write for the check-in request
-    std::vector<std::uint8_t> response_body_bytes(mutils::bytes_size(response.presented_id));
+    std::size_t request_size = mutils::bytes_size(response.presented_id);
+    std::vector<std::uint8_t> response_body_bytes(request_size + mutils::bytes_size(response.voter_unique_id));
     mutils::to_bytes(response.presented_id, response_body_bytes.data());
+    mutils::to_bytes(response.voter_unique_id, response_body_bytes.data() + request_size);
     id_service_verifier.init();
     id_service_verifier.add_bytes(response_body_bytes.data(), response_body_bytes.size());
     bool verified = id_service_verifier.finalize(response.id_service_signature);
@@ -170,7 +172,7 @@ void PollbookClient::start_checkin_request_write(const VerifiedVoterID& verified
                                           .count();
     CheckinRequest::Body request_body(my_id, current_timestamp, std::get<2>(current_request_voter_name),
                                       std::get<0>(current_request_voter_name), std::get<1>(current_request_voter_name),
-                                      current_request_voter_id_number, verified_id_response);
+                                      verified_id_response.voter_unique_id, verified_id_response);
     // Serialize the body of the message and sign the bytes
     std::vector<std::uint8_t> request_body_bytes(mutils::bytes_size(request_body));
     mutils::to_bytes(request_body, request_body_bytes.data());
@@ -234,8 +236,20 @@ void PollbookClient::handle_checkin_response(const CheckinResponse& response) {
 
 std::future<CheckinResult> PollbookClient::check_in_voter(const std::string& first_name, const std::string& middle_name,
                                                           const std::string& last_name,
-                                                          std::uint32_t voter_id_document_number,
+                                                          std::uint32_t desired_voter_unique_id,
                                                           const std::vector<std::uint8_t>& voter_id_data) {
+
+    // Prepend the desired voter unique ID at the beginning of the voter ID data, to tell our
+    // dummy voter ID service what unique ID it should "match" the data to
+    std::vector<std::uint8_t> id_data_with_number(voter_id_data.size() + sizeof(std::uint32_t));
+    std::memcpy(id_data_with_number.data(), &desired_voter_unique_id, sizeof(std::uint32_t));
+    std::memcpy(id_data_with_number.data() + sizeof(std::uint32_t), voter_id_data.data(), voter_id_data.size());
+
+    return check_in_voter(first_name, middle_name, last_name, id_data_with_number);
+}
+
+std::future<CheckinResult> PollbookClient::check_in_voter(const std::string& first_name, const std::string& middle_name,
+                                                          const std::string& last_name, const std::vector<std::uint8_t>& voter_id_data) {
     if(!checkin_connected || !id_connected) {
         throw std::runtime_error("Client must be connected before calling check_in_voter!");
     }
@@ -249,7 +263,6 @@ std::future<CheckinResult> PollbookClient::check_in_voter(const std::string& fir
                                           .count();
     // Store these in the instance variables so they can be used later to construct the check-in request
     current_request_voter_name = std::make_tuple(first_name, middle_name, last_name);
-    current_request_voter_id_number = voter_id_document_number;
     // Start the checkin process by asynchronously scheduling the write of the ID-verification request
     start_id_request_write(current_timestamp, voter_id_data);
     // Return a future that the caller can use to wait for the process to finish

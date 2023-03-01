@@ -15,8 +15,17 @@ namespace epollbook {
 
 /**
  * A server class that provides a very simple "voter ID validation" service.
- * This is not intended to be production quality; it's just here to facilitate
- * testing the other parts of the check-in service.
+ * The API is intended to mock-up what a state-provided voter ID service might
+ * do: It accepts as input an image or other data representing a voter's
+ * identification documents (e.g. a driver's license, passport, state non-driver
+ * ID, tribal ID, or military ID), determines if the ID is valid, and returns
+ * a digitally signed statement linking the ID to the voter's unique identifier
+ * within the pollbook system.
+ *
+ * Since this mockup can't actually interpret the voter ID data, but it still
+ * needs to respond with a voter unique ID for it, we will assume that the client
+ * supplies the desired unique ID in the first sizeof(uint32_t) bytes of the
+ * data. The service will use this number as the ID that "matches" the data.
  */
 class VoterIDService {
 public:
@@ -26,6 +35,12 @@ public:
      * shouldn't be surprising or need to be changed.
      */
     const openssl::DigestAlgorithm signature_digest_algorithm = openssl::DigestAlgorithm::SHA256;
+    /**
+     * A constant used by the validate_and_match_id method to indicate that the
+     * voter ID data didn't match any known voters. This is the largest possible
+     * value of a uint32_t and should not be the unique ID of any real voter.
+     */
+    const std::uint32_t INVALID_VOTER_ID = static_cast<std::uint32_t>(-1);
 private:
     /** A pointer to the debug logger */
     std::shared_ptr<spdlog::logger> logger;
@@ -85,15 +100,19 @@ private:
     void handle_validation_request(const asio::ip::tcp::endpoint& client_ip, const VoterIDRequest& request);
 
     /**
-     * Examines the binary data provided by a client to represent a voter's ID
-     * and determines if it is valid. Right now this does nothing because we
-     * don't know any details of how voter IDs are represented, stored, or validated;
+     * Examines the binary data provided by a client to represent a voter's
+     * identification document, determines if it is valid, and uses it to match
+     * the voter to a unique voter ID number (agreed upon by the pollbook server
+     * and this server). Right now this just reads the first sizeof(uint32_t)
+     * bytes of the data and uses that as the unique ID, because we don't know
+     * any details of how voter IDs are represented, stored, or validated;
      * it's just here as a placeholder.
      *
      * @param id_data The voter ID data provided by an ID validation request
-     * @return True if the ID is valid, false if it is not
+     * @return A unique voter ID number if the data is valid, or the constant
+     * INVALID_VOTER_ID if the data does not represent a valid ID.
      */
-    bool validate_id_data(const std::vector<uint8_t>& id_data);
+    std::uint32_t validate_and_match_id_data(const std::vector<uint8_t>& id_data);
 
     /**
      * Loads a public key for a particular client from the PEM file that should
