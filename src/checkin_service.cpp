@@ -19,7 +19,9 @@ CheckinService::CheckinService()
                               Config::getString(Config::SECTION_SECURITY, Config::ID_SERVICE_PUBLIC_KEY)),
                           openssl::DigestAlgorithm::SHA256),
       signer(openssl::EnvelopeKey::from_pem_private(Config::getString(Config::SECTION_SECURITY, Config::LOCAL_PRIVATE_KEY)),
-             signature_digest_algorithm) {}
+             signature_digest_algorithm) {
+    load_voter_list(Config::getString(Config::SECTION_BASIC, Config::VOTER_LIST_FILE));
+}
 
 void CheckinService::do_accept() {
     connection_listener.async_accept(network_io_context,
@@ -90,48 +92,19 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
     uint64_t current_timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
                                      current_time.time_since_epoch())
                                      .count();
-    // Verify the client's signature on the message
-    std::vector<std::uint8_t> request_body_bytes(mutils::bytes_size(request.body));
-    mutils::to_bytes(request.body, request_body_bytes.data());
-    openssl::Verifier& verifier = client_verifiers.at(request.body.client_id_num);
-    verifier.init();
-    verifier.add_bytes(request_body_bytes.data(), request_body_bytes.size());
-    bool client_valid = verifier.finalize(request.client_signature);
-    // The decision of whether or not to accept the request; only set to true if the request passes all the checks
-    // Since we must return an almost-identical reply whether or not the request is accepted, there's no way to return early
     bool accept = false;
-    // If the client's signature was valid, verify the ID service's signature
-    if(client_valid) {
-        std::size_t id_request_size = mutils::bytes_size(request.body.verified_id_message.presented_id);
-        std::size_t voter_uid_size = mutils::bytes_size(request.body.verified_id_message.voter_unique_id);
-        std::vector<std::uint8_t> id_message_bytes(id_request_size + voter_uid_size);
-        mutils::to_bytes(request.body.verified_id_message.presented_id, id_message_bytes.data());
-        mutils::to_bytes(request.body.verified_id_message.voter_unique_id, id_message_bytes.data() + id_request_size);
-        id_service_verifier.init();
-        id_service_verifier.add_bytes(id_message_bytes.data(), id_message_bytes.size());
-        bool id_server_valid = id_service_verifier.finalize(request.body.verified_id_message.id_service_signature);
-        // If the ID service's signature was valid, check the timestamp
-        if(id_server_valid) {
-            int64_t time_difference = current_timestamp > request.body.timestamp
-                                          ? current_timestamp - request.body.timestamp
-                                          : request.body.timestamp - current_timestamp;
-            if(std::abs(time_difference) < Config::getUInt32(Config::SECTION_SECURITY, Config::REQUEST_FRESHNESS_INTERVAL)) {
-                // If the timestamp is recent enough, check if the voter has been checked in yet
-                // (still to do)
+    if(validate_client_request(request, current_timestamp)) {
+        auto find_voter_result = voter_status_table.find(request.body.voter_unique_id);
+        if(find_voter_result != voter_status_table.end()) {
+            if(find_voter_result->second == VoterStatus::ELIGIBLE) {
+                find_voter_result->second = VoterStatus::CHECKED_IN;
                 logger->debug("Accepted a check-in request for voter {} {} {} (UID {}) from client {}", request.body.first_name, request.body.middle_name, request.body.last_name, request.body.voter_unique_id, request.body.client_id_num);
                 accept = true;
             } else {
-                logger->debug("Rejecting client {}'s check-in request for {} {} {} (UID {}) because its timestamp, {}, was older than {} ms",
-                              request.body.client_id_num, request.body.first_name, request.body.middle_name, request.body.last_name,
-                              request.body.voter_unique_id, request.body.timestamp, Config::getUInt32(Config::SECTION_SECURITY, Config::REQUEST_FRESHNESS_INTERVAL));
+                logger->debug("Rejecting client {}'s check-in request for {} {} {} (UID {}) because the voter has already checked in",
+                              request.body.client_id_num, request.body.first_name, request.body.middle_name, request.body.last_name, request.body.voter_unique_id);
             }
-        } else {
-            logger->debug("Rejecting client {}'s check-in request for {} {} {} (UID {}) because the signature on the ID verification was invalid",
-                          request.body.client_id_num, request.body.first_name, request.body.middle_name, request.body.last_name, request.body.voter_unique_id);
         }
-    } else {
-        logger->debug("Rejecting client {}'s check-in request for {} {} {} (UID {}) because the client's signature on the message was invalid",
-                      request.body.client_id_num, request.body.first_name, request.body.middle_name, request.body.last_name, request.body.voter_unique_id);
     }
 
     CheckinResponse::Body response_body(accept, request.body.client_id_num,
@@ -154,6 +127,45 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
     start_size_read(client_ip);
 }
 
+bool CheckinService::validate_client_request(const CheckinRequest& request, std::uint64_t current_timestamp) {
+    // Verify the client's signature on the message
+    std::vector<std::uint8_t> request_body_bytes(mutils::bytes_size(request.body));
+    mutils::to_bytes(request.body, request_body_bytes.data());
+    openssl::Verifier& verifier = client_verifiers.at(request.body.client_id_num);
+    verifier.init();
+    verifier.add_bytes(request_body_bytes.data(), request_body_bytes.size());
+    if(!verifier.finalize(request.client_signature)) {
+        logger->debug("Rejecting client {}'s check-in request for {} {} {} (UID {}) because the client's signature on the message was invalid",
+                      request.body.client_id_num, request.body.first_name, request.body.middle_name, request.body.last_name, request.body.voter_unique_id);
+        return false;
+    }
+    // If the client's signature was valid, verify the ID service's signature
+    std::size_t id_request_size = mutils::bytes_size(request.body.verified_id_message.presented_id);
+    std::size_t voter_uid_size = mutils::bytes_size(request.body.verified_id_message.voter_unique_id);
+    std::vector<std::uint8_t> id_message_bytes(id_request_size + voter_uid_size);
+    mutils::to_bytes(request.body.verified_id_message.presented_id, id_message_bytes.data());
+    mutils::to_bytes(request.body.verified_id_message.voter_unique_id, id_message_bytes.data() + id_request_size);
+    id_service_verifier.init();
+    id_service_verifier.add_bytes(id_message_bytes.data(), id_message_bytes.size());
+    if(!id_service_verifier.finalize(request.body.verified_id_message.id_service_signature)) {
+        logger->debug("Rejecting client {}'s check-in request for {} {} {} (UID {}) because the signature on the ID verification was invalid",
+                      request.body.client_id_num, request.body.first_name, request.body.middle_name, request.body.last_name, request.body.voter_unique_id);
+        return false;
+    }
+    // If the ID service's signature was valid, check the timestamp
+    int64_t time_difference = current_timestamp > request.body.timestamp
+                                  ? current_timestamp - request.body.timestamp
+                                  : request.body.timestamp - current_timestamp;
+    if(std::abs(time_difference) > Config::getUInt32(Config::SECTION_SECURITY, Config::REQUEST_FRESHNESS_INTERVAL)) {
+        logger->debug("Rejecting client {}'s check-in request for {} {} {} (UID {}) because its timestamp, {}, was older than {} ms",
+                      request.body.client_id_num, request.body.first_name, request.body.middle_name, request.body.last_name,
+                      request.body.voter_unique_id, request.body.timestamp, Config::getUInt32(Config::SECTION_SECURITY, Config::REQUEST_FRESHNESS_INTERVAL));
+        return false;
+    }
+    // At this point the request looks good, now we can actually attempt to check in the voter
+    return true;
+}
+
 void CheckinService::run() {
     // Post the first asynchronous accept
     do_accept();
@@ -174,6 +186,25 @@ bool CheckinService::load_client_public_key(std::uint32_t client_id) {
         return false;
     }
     return true;
+}
+
+void CheckinService::load_voter_list(const std::string& csv_file_path) {
+    std::ifstream csv_file_stream(csv_file_path);
+    // First read the CSV header line
+    std::string header_line;
+    std::getline(csv_file_stream, header_line);
+    // Ensure the expected headers are there
+    if(header_line.substr(0, header_line.find(",")) != "UID") {
+        throw std::runtime_error("Voter CSV file " + csv_file_path + " did not have the expected column headers");
+    }
+    std::string file_line;
+    while(std::getline(csv_file_stream, file_line)) {
+        // For now, just get the first column (the UID) and ignore the others
+        // If we need to load more information I'll write a real CSV parser
+        std::string uid_column_string = file_line.substr(0, file_line.find(","));
+        std::uint32_t uid = std::stoul(uid_column_string);
+        voter_status_table.emplace(uid, VoterStatus::ELIGIBLE);
+    }
 }
 
 }  // namespace epollbook

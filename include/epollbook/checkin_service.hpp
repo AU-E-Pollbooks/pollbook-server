@@ -13,6 +13,11 @@
 
 namespace epollbook {
 
+enum class VoterStatus {
+    ELIGIBLE,
+    CHECKED_IN
+};
+
 class CheckinService {
 public:
     /**
@@ -54,18 +59,18 @@ private:
      * with the service's signing key.
      */
     openssl::Signer signer;
+    /**
+     * Maps each registered voter's unique ID (as defined by the pollbook system
+     * and agreed on by the ID verification service) to their current check-in
+     * status. If a voter's unique ID is not in this table, they are assumed to
+     * not be a registered voter in this district.
+     */
+    std::map<std::uint32_t, VoterStatus> voter_status_table;
 
     /**
      * Handler function for ASIO accept events.
      */
     void handle_accept(const asio::error_code& error, asio::ip::tcp::socket incoming_socket);
-
-    /**
-     * Handles an asynchronous read event for a message from a client. When ASIO
-     * calls this function, the receive buffer for that client should be populated
-     * with message data.
-     */
-    void handle_read(const asio::ip::tcp::endpoint& client_ip, const asio::error_code& error, std::size_t bytes_read);
 
     /**
      * Starts an asynchronous accept request on the connection listener.
@@ -97,6 +102,17 @@ private:
     void handle_checkin_request(const asio::ip::tcp::endpoint& client_ip, const CheckinRequest& request);
 
     /**
+     * Determines if a check-in request from a client passes basic validity tests, including
+     * having a valid signature, containing a properly signed statement from the ID-verification
+     * service, and having a recent timestamp.
+     *
+     * @param request The request to verify
+     * @param current_timestamp The current system time to use to verify the message's freshness
+     * @return true if the request passes all checks, false if it fails
+     */
+    bool validate_client_request(const CheckinRequest& request, std::uint64_t current_timestamp);
+
+    /**
      * Loads a public key for a particular client from the PEM file that should
      * correspond to a client with that ID, based on the configuration options
      * client_keys_folder and client_key_file_prefix.
@@ -118,6 +134,15 @@ public:
      * should expect it to block forever.
      */
     void run();
+    /**
+     * Reads a CSV file containing a list of voters indexed by UID and uses it
+     * to initialize the service's voter status table. The first column of the
+     * CSV file should be named "UID" and contain the agreed-upon unique voter
+     * ID numbers used by the pollbook service and the ID verification service.
+     *
+     * @param csv_file_path A path to the CSV file containing the list of voters.
+     */
+    void load_voter_list(const std::string& csv_file_path);
 };
 
 }  // namespace epollbook
