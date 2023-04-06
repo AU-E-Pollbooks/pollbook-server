@@ -78,7 +78,7 @@ public:
      * @param pem_file_name The name (or path) of the PEM file to create
      */
     void to_pem_public(const std::string& pem_file_name);
-     /**
+    /**
      * Serializes the public-key component of this EnvelopeKey into PEM format,
      * then returns the resulting PEM "file" in a string. This avoids the
      * overhead of disk I/O if you need to send the file over the network.
@@ -115,4 +115,4 @@ public:
      */
     static EnvelopeKey from_pem_private(const void* byte_buffer, std::size_t buffer_size);
 };
-}
+}  // namespace openssl

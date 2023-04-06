@@ -10,16 +10,16 @@
 namespace epollbook {
 
 CheckinService::CheckinService()
-    : logger(spdlog::get(LogUtils::get_default_logger_name())),
-      connection_listener(network_io_context,
-                          asio::ip::tcp::endpoint(
-                              asio::ip::tcp::tcp::v4(),
-                              Config::getUInt16(Config::SECTION_BASIC, Config::CHECKIN_SERVICE_PORT))),
-      id_service_verifier(openssl::EnvelopeKey::from_pem_public(
-                              Config::getString(Config::SECTION_SECURITY, Config::ID_SERVICE_PUBLIC_KEY)),
-                          openssl::DigestAlgorithm::SHA256),
-      signer(openssl::EnvelopeKey::from_pem_private(Config::getString(Config::SECTION_SECURITY, Config::LOCAL_PRIVATE_KEY)),
-             signature_digest_algorithm) {
+        : logger(spdlog::get(LogUtils::get_default_logger_name())),
+          connection_listener(network_io_context,
+                              asio::ip::tcp::endpoint(
+                                  asio::ip::tcp::tcp::v4(),
+                                  Config::getUInt16(Config::SECTION_BASIC, Config::CHECKIN_SERVICE_PORT))),
+          id_service_verifier(openssl::EnvelopeKey::from_pem_public(
+                                  Config::getString(Config::SECTION_SECURITY, Config::ID_SERVICE_PUBLIC_KEY)),
+                              openssl::DigestAlgorithm::SHA256),
+          signer(openssl::EnvelopeKey::from_pem_private(Config::getString(Config::SECTION_SECURITY, Config::LOCAL_PRIVATE_KEY)),
+                 signature_digest_algorithm) {
     load_voter_list(Config::getString(Config::SECTION_BASIC, Config::VOTER_LIST_FILE));
 }
 

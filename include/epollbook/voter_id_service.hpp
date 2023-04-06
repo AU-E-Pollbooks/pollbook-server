@@ -41,6 +41,7 @@ public:
      * value of a uint32_t and should not be the unique ID of any real voter.
      */
     const std::uint32_t INVALID_VOTER_ID = static_cast<std::uint32_t>(-1);
+
 private:
     /** A pointer to the debug logger */
     std::shared_ptr<spdlog::logger> logger;
@@ -126,7 +127,6 @@ private:
     bool load_client_public_key(std::uint32_t client_id);
 
 public:
-
     /**
      * Constructor, loads the private key the service will use to sign messages
      * based on the configuration options.

@@ -33,7 +33,6 @@ enum class CipherAlgorithm {
  */
 const EVP_CIPHER* get_cipher_type_ptr(CipherAlgorithm algorithm_type);
 
-
 class EnvelopeEncryptor {
     EnvelopeKey public_key;
     CipherAlgorithm cipher_type;
@@ -187,4 +186,4 @@ public:
     std::size_t finalize(unsigned char* output_buffer);
 };
 
-}
+}  // namespace openssl

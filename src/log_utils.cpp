@@ -12,7 +12,7 @@ std::unique_ptr<LogUtils> LogUtils::instance;
 
 void LogUtils::initialize() {
     if(!instance) {
-        //Can't use make_unique because the constructor is private
+        // Can't use make_unique because the constructor is private
         instance = std::unique_ptr<LogUtils>(new LogUtils());
     }
 }
@@ -29,13 +29,13 @@ std::string LogUtils::get_default_logger_name() {
 }
 
 void LogUtils::make_default_logger(const std::string& logger_name,
-                                    spdlog::level::level_enum log_level) {
+                                   spdlog::level::level_enum log_level) {
     default_logger_name = logger_name;
     std::vector<spdlog::sink_ptr> log_sinks;
     log_sinks.push_back(std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
-        logger_name + ".log", 1L<<20, 10));
+        logger_name + ".log", 1L << 20, 10));
     log_sinks.push_back(std::make_shared<spdlog::sinks::stdout_color_sink_mt>());
-    spdlog::init_thread_pool(1L<<20, 1);
+    spdlog::init_thread_pool(1L << 20, 1);
     std::shared_ptr<spdlog::logger> log = std::make_shared<spdlog::async_logger>(
         logger_name,
         log_sinks.begin(),
@@ -46,7 +46,5 @@ void LogUtils::make_default_logger(const std::string& logger_name,
     log->set_pattern("[%H:%M:%S.%f] [%n] [Thread %t] [%^%l%$] %v");
     log->set_level(log_level);
 }
-
-
 
 }  // namespace epollbook

@@ -26,6 +26,7 @@ public:
      * shouldn't be surprising or need to be changed.
      */
     const openssl::DigestAlgorithm signature_digest_algorithm = openssl::DigestAlgorithm::SHA256;
+
 private:
     /** A pointer to the debug logger */
     std::shared_ptr<spdlog::logger> logger;

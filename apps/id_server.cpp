@@ -1,6 +1,6 @@
-#include <epollbook/voter_id_service.hpp>
 #include <epollbook/config/config.hpp>
 #include <epollbook/log_utils.hpp>
+#include <epollbook/voter_id_service.hpp>
 
 #include <cstdlib>
 #include <iostream>

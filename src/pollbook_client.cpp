@@ -15,22 +15,22 @@
 namespace epollbook {
 
 PollbookClient::PollbookClient()
-    : logger(spdlog::get(LogUtils::get_default_logger_name())),
-      network_work_guard(network_io_context.get_executor()),
-      checkin_server_socket(network_io_context),
-      id_server_socket(network_io_context),
-      checkin_connected(false),
-      id_connected(false),
-      private_key_signer(openssl::EnvelopeKey::from_pem_private(
-                             Config::getString(Config::SECTION_SECURITY, Config::LOCAL_PRIVATE_KEY)),
-                         openssl::DigestAlgorithm::SHA256),
-      id_service_verifier(openssl::EnvelopeKey::from_pem_public(
-                              Config::getString(Config::SECTION_SECURITY, Config::ID_SERVICE_PUBLIC_KEY)),
-                          openssl::DigestAlgorithm::SHA256),
-      checkin_service_verifier(openssl::EnvelopeKey::from_pem_public(
-                                   Config::getString(Config::SECTION_SECURITY, Config::CHECKIN_SERVICE_PUBLIC_KEY)),
-                               openssl::DigestAlgorithm::SHA256),
-      network_thread([this]() { network_io_context.run(); }) {}
+        : logger(spdlog::get(LogUtils::get_default_logger_name())),
+          network_work_guard(network_io_context.get_executor()),
+          checkin_server_socket(network_io_context),
+          id_server_socket(network_io_context),
+          checkin_connected(false),
+          id_connected(false),
+          private_key_signer(openssl::EnvelopeKey::from_pem_private(
+                                 Config::getString(Config::SECTION_SECURITY, Config::LOCAL_PRIVATE_KEY)),
+                             openssl::DigestAlgorithm::SHA256),
+          id_service_verifier(openssl::EnvelopeKey::from_pem_public(
+                                  Config::getString(Config::SECTION_SECURITY, Config::ID_SERVICE_PUBLIC_KEY)),
+                              openssl::DigestAlgorithm::SHA256),
+          checkin_service_verifier(openssl::EnvelopeKey::from_pem_public(
+                                       Config::getString(Config::SECTION_SECURITY, Config::CHECKIN_SERVICE_PUBLIC_KEY)),
+                                   openssl::DigestAlgorithm::SHA256),
+          network_thread([this]() { network_io_context.run(); }) {}
 
 PollbookClient::~PollbookClient() {
     // Shut down the IO context so the network thread can return

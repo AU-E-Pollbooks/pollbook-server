@@ -2,9 +2,9 @@
 
 #include "inifile-cpp/inicpp.h"
 
-#include <memory>
 #include <atomic>
 #include <cstdint>
+#include <memory>
 
 namespace epollbook {
 
@@ -26,6 +26,7 @@ private:
     ini::IniFile parsed_config_file;
     /** Private constructor called by the initialize() method */
     Config(const std::string& config_file_path);
+
 public:
     /**
      * Initializes the configuration object by loading an INI file from the
@@ -65,7 +66,7 @@ public:
      * @param key The name of the property
      * @return The property's value, as loaded from the config file
      */
-    template<typename T>
+    template <typename T>
     T get(const std::string& section, const std::string& key) {
         return parsed_config_file[section][key].as<T>();
     }
@@ -135,4 +136,4 @@ public:
     static const std::string REQUEST_FRESHNESS_INTERVAL;
 };
 
-}
+}  // namespace epollbook

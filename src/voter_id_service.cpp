@@ -13,12 +13,12 @@
 namespace epollbook {
 
 VoterIDService::VoterIDService()
-    : logger(spdlog::get(LogUtils::get_default_logger_name())),
-      connection_listener(network_io_context,
-                          asio::ip::tcp::endpoint(asio::ip::tcp::tcp::v4(),
-                                                  Config::getUInt16(Config::SECTION_BASIC, Config::ID_SERVICE_PORT))),
-      signer(openssl::EnvelopeKey::from_pem_private(Config::getString(Config::SECTION_SECURITY, Config::LOCAL_PRIVATE_KEY)),
-             signature_digest_algorithm) {}
+        : logger(spdlog::get(LogUtils::get_default_logger_name())),
+          connection_listener(network_io_context,
+                              asio::ip::tcp::endpoint(asio::ip::tcp::tcp::v4(),
+                                                      Config::getUInt16(Config::SECTION_BASIC, Config::ID_SERVICE_PORT))),
+          signer(openssl::EnvelopeKey::from_pem_private(Config::getString(Config::SECTION_SECURITY, Config::LOCAL_PRIVATE_KEY)),
+                 signature_digest_algorithm) {}
 
 void VoterIDService::do_accept() {
     connection_listener.async_accept(network_io_context,

@@ -32,8 +32,8 @@ const EVP_MD* get_digest_type_ptr(DigestAlgorithm digest_type) {
 }
 
 Hasher::Hasher(DigestAlgorithm digest_type)
-    : digest_type(digest_type),
-      digest_context(EVP_MD_CTX_new()) {}
+        : digest_type(digest_type),
+          digest_context(EVP_MD_CTX_new()) {}
 
 int Hasher::get_hash_size() {
     return EVP_MD_CTX_size(digest_context.get());

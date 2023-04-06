@@ -38,9 +38,9 @@ struct VoterIDRequest : public mutils::ByteRepresentable {
         Body(std::uint32_t client_id_num,
              std::uint64_t timestamp,
              const std::vector<std::uint8_t>& voter_id_data)
-            : client_id_num(client_id_num),
-              timestamp(timestamp),
-              voter_id_data(voter_id_data) {}
+                : client_id_num(client_id_num),
+                  timestamp(timestamp),
+                  voter_id_data(voter_id_data) {}
 
         DEFAULT_SERIALIZATION_SUPPORT(Body, client_id_num, timestamp, voter_id_data);
     };
@@ -54,8 +54,8 @@ struct VoterIDRequest : public mutils::ByteRepresentable {
 
     VoterIDRequest(const Body& message_body,
                    const std::vector<std::uint8_t>& client_signature)
-        : body(message_body),
-          client_signature(client_signature) {}
+            : body(message_body),
+              client_signature(client_signature) {}
 
     DEFAULT_SERIALIZATION_SUPPORT(VoterIDRequest, body, client_signature);
 };
@@ -90,9 +90,9 @@ struct VerifiedVoterID : public mutils::ByteRepresentable {
     VerifiedVoterID(const VoterIDRequest& id_request,
                     std::uint32_t voter_uid,
                     const std::vector<std::uint8_t>& id_service_signature)
-        : presented_id(id_request),
-          voter_unique_id(voter_uid),
-          id_service_signature(id_service_signature) {}
+            : presented_id(id_request),
+              voter_unique_id(voter_uid),
+              id_service_signature(id_service_signature) {}
 
     DEFAULT_SERIALIZATION_SUPPORT(VerifiedVoterID, presented_id, voter_unique_id, id_service_signature);
 };

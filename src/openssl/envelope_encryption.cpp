@@ -34,9 +34,9 @@ const EVP_CIPHER* get_cipher_type_ptr(CipherAlgorithm algorithm_type) {
 }
 
 EnvelopeEncryptor::EnvelopeEncryptor(const EnvelopeKey& target_public_key, CipherAlgorithm algorithm_type)
-    : public_key(target_public_key),
-      cipher_type(algorithm_type),
-      cipher_context(EVP_CIPHER_CTX_new()) {}
+        : public_key(target_public_key),
+          cipher_type(algorithm_type),
+          cipher_context(EVP_CIPHER_CTX_new()) {}
 
 int EnvelopeEncryptor::get_IV_size() {
     return EVP_CIPHER_get_iv_length(get_cipher_type_ptr(cipher_type));
@@ -101,9 +101,9 @@ std::vector<unsigned char> EnvelopeEncryptor::make_encrypted_message(const unsig
 }
 
 EnvelopeDecryptor::EnvelopeDecryptor(const EnvelopeKey& private_key, CipherAlgorithm algorithm_type)
-    : private_key(private_key),
-      cipher_type(algorithm_type),
-      cipher_context(EVP_CIPHER_CTX_new()) {}
+        : private_key(private_key),
+          cipher_type(algorithm_type),
+          cipher_context(EVP_CIPHER_CTX_new()) {}
 
 int EnvelopeDecryptor::get_IV_size() {
     return EVP_CIPHER_get_iv_length(get_cipher_type_ptr(cipher_type));

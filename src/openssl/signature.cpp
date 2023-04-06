@@ -10,9 +10,9 @@
 namespace openssl {
 
 Signer::Signer(const EnvelopeKey& _private_key, DigestAlgorithm digest_type)
-    : private_key(_private_key),
-      digest_type(digest_type),
-      digest_context(EVP_MD_CTX_new()) {}
+        : private_key(_private_key),
+          digest_type(digest_type),
+          digest_context(EVP_MD_CTX_new()) {}
 
 int Signer::get_max_signature_size() {
     return private_key.get_max_size();
@@ -80,9 +80,9 @@ void Signer::sign_bytes(const void* buffer, std::size_t buffer_size, uint8_t* si
 }
 
 Verifier::Verifier(const EnvelopeKey& _public_key, DigestAlgorithm digest_type)
-    : public_key(_public_key),
-      digest_type(digest_type),
-      digest_context(EVP_MD_CTX_new()) {}
+        : public_key(_public_key),
+          digest_type(digest_type),
+          digest_context(EVP_MD_CTX_new()) {}
 
 int Verifier::get_max_signature_size() {
     return public_key.get_max_size();

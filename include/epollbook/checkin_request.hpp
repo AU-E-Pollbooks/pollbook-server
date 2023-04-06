@@ -56,13 +56,13 @@ struct CheckinRequest : public mutils::ByteRepresentable {
              const std::string& middle_name,
              std::uint32_t voter_unique_id,
              const VerifiedVoterID& verified_id_message)
-            : client_id_num(client_id_num),
-              timestamp(timestamp),
-              last_name(last_name),
-              first_name(first_name),
-              middle_name(middle_name),
-              voter_unique_id(voter_unique_id),
-              verified_id_message(verified_id_message) {}
+                : client_id_num(client_id_num),
+                  timestamp(timestamp),
+                  last_name(last_name),
+                  first_name(first_name),
+                  middle_name(middle_name),
+                  voter_unique_id(voter_unique_id),
+                  verified_id_message(verified_id_message) {}
         DEFAULT_SERIALIZATION_SUPPORT(Body, client_id_num, timestamp, last_name, first_name, middle_name, voter_unique_id, verified_id_message);
     };
 
@@ -74,8 +74,8 @@ struct CheckinRequest : public mutils::ByteRepresentable {
 
     CheckinRequest(const Body& message_body,
                    const std::vector<std::uint8_t>& client_signature)
-        : body(message_body),
-          client_signature(client_signature) {}
+            : body(message_body),
+              client_signature(client_signature) {}
 
     DEFAULT_SERIALIZATION_SUPPORT(CheckinRequest, body, client_signature);
 };
@@ -118,13 +118,13 @@ struct CheckinResponse : public mutils::ByteRepresentable {
              const std::string& first_name,
              const std::string& middle_name,
              std::uint32_t voter_unique_id)
-            : approved(approved),
-              requesting_client_id(requesting_client_id),
-              timestamp(timestamp),
-              last_name(last_name),
-              first_name(first_name),
-              middle_name(middle_name),
-              voter_unique_id(voter_unique_id) {}
+                : approved(approved),
+                  requesting_client_id(requesting_client_id),
+                  timestamp(timestamp),
+                  last_name(last_name),
+                  first_name(first_name),
+                  middle_name(middle_name),
+                  voter_unique_id(voter_unique_id) {}
         DEFAULT_SERIALIZATION_SUPPORT(Body, approved, requesting_client_id, timestamp, last_name, first_name, middle_name, voter_unique_id);
     };
     Body body;
@@ -135,8 +135,8 @@ struct CheckinResponse : public mutils::ByteRepresentable {
 
     CheckinResponse(const Body& message_body,
                     const std::vector<std::uint8_t>& checkin_service_signature)
-        : body(message_body),
-          checkin_service_signature(checkin_service_signature) {}
+            : body(message_body),
+              checkin_service_signature(checkin_service_signature) {}
 
     DEFAULT_SERIALIZATION_SUPPORT(CheckinResponse, body, checkin_service_signature);
 };

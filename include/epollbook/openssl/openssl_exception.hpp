@@ -39,9 +39,9 @@ struct openssl_error : public std::runtime_error {
     const int library_code;
     const int reason_code;
     openssl_error(unsigned long error_code_packed, const std::string& operation)
-        : runtime_error(get_error_string(error_code_packed, operation)),
-          library_code(ERR_GET_LIB(error_code_packed)),
-          reason_code(ERR_GET_REASON(error_code_packed)) {}
+            : runtime_error(get_error_string(error_code_packed, operation)),
+              library_code(ERR_GET_LIB(error_code_packed)),
+              reason_code(ERR_GET_REASON(error_code_packed)) {}
 };
 
 /**
@@ -53,9 +53,9 @@ struct openssl_error : public std::runtime_error {
 struct buffer_overflow : public std::runtime_error {
     const std::size_t required_size;
     buffer_overflow(const std::string& function_name, std::size_t required_size, std::size_t actual_size)
-        : runtime_error(function_name + ": needed a buffer of size " + std::to_string(required_size) +
-                        " but received one of size " + std::to_string(actual_size)),
-          required_size(required_size) {}
+            : runtime_error(function_name + ": needed a buffer of size " + std::to_string(required_size) +
+                            " but received one of size " + std::to_string(actual_size)),
+              required_size(required_size) {}
 };
 
 // The standard library doesn't contain any exception types to represent file-related errors,
@@ -69,7 +69,7 @@ struct buffer_overflow : public std::runtime_error {
 struct file_error : public std::runtime_error {
     const int error_code;
     file_error(const int errno_value, const std::string& message = "")
-        : runtime_error(message), error_code(errno_value) {}
+            : runtime_error(message), error_code(errno_value) {}
 };
 
 /**
@@ -79,7 +79,7 @@ struct file_error : public std::runtime_error {
  */
 struct file_not_found : public file_error {
     file_not_found(const int errno_value, const std::string& filename)
-        : file_error(errno_value, "File not found: " + filename) {}
+            : file_error(errno_value, "File not found: " + filename) {}
 };
 
 /**
@@ -89,7 +89,7 @@ struct file_not_found : public file_error {
  */
 struct permission_denied : public file_error {
     permission_denied(const int errno_value, const std::string& filename)
-        : file_error(errno_value, "Error opening file " + filename + ": permission denied.") {}
+            : file_error(errno_value, "Error opening file " + filename + ": permission denied.") {}
 };
 
 }  // namespace openssl
