@@ -330,6 +330,264 @@
         mutils::post_object(func,n); \
     }
 
+#define DEFAULT_SERIALIZE15(a,b,c,d,e,f,g,h,i,j,k,l,m,n,o) std::size_t to_bytes(uint8_t* ret) const { \
+        int bytes_written = mutils::to_bytes(a,ret);  \
+        bytes_written += mutils::to_bytes(b,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(c,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(d,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(e,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(f,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(g,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(h,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(i,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(j,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(k,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(l,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(m,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(n,ret + bytes_written); \
+        return bytes_written + mutils::to_bytes(o,ret + bytes_written); \
+    } \
+    std::size_t bytes_size() const { \
+        return mutils::bytes_size(a) + mutils::bytes_size(b) + mutils::bytes_size(c) + mutils::bytes_size(d) + mutils::bytes_size(e) + mutils::bytes_size(f) + mutils::bytes_size(g) + mutils::bytes_size(h) + mutils::bytes_size(i) + mutils::bytes_size(j) + mutils::bytes_size(k) + mutils::bytes_size(l) + mutils::bytes_size(m) + mutils::bytes_size(n) + mutils::bytes_size(o) ; \
+    } \
+    void post_object(const std::function<void (uint8_t const * const, std::size_t)>& func ) const { \
+        mutils::post_object(func,a); \
+        mutils::post_object(func,b); \
+        mutils::post_object(func,c); \
+        mutils::post_object(func,d); \
+        mutils::post_object(func,e); \
+        mutils::post_object(func,f); \
+        mutils::post_object(func,g); \
+        mutils::post_object(func,h); \
+        mutils::post_object(func,i); \
+        mutils::post_object(func,j); \
+        mutils::post_object(func,k); \
+        mutils::post_object(func,l); \
+        mutils::post_object(func,m); \
+        mutils::post_object(func,n); \
+        mutils::post_object(func,o); \
+    }
+
+#define DEFAULT_SERIALIZE16(a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p) std::size_t to_bytes(uint8_t* ret) const { \
+        int bytes_written = mutils::to_bytes(a,ret);  \
+        bytes_written += mutils::to_bytes(b,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(c,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(d,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(e,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(f,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(g,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(h,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(i,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(j,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(k,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(l,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(m,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(n,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(o,ret + bytes_written); \
+        return bytes_written + mutils::to_bytes(p,ret + bytes_written); \
+    } \
+    std::size_t bytes_size() const { \
+        return mutils::bytes_size(a) + mutils::bytes_size(b) + mutils::bytes_size(c) + mutils::bytes_size(d) + mutils::bytes_size(e) + mutils::bytes_size(f) + mutils::bytes_size(g) + mutils::bytes_size(h) + mutils::bytes_size(i) + mutils::bytes_size(j) + mutils::bytes_size(k) + mutils::bytes_size(l) + mutils::bytes_size(m) + mutils::bytes_size(n) + mutils::bytes_size(o) + mutils::bytes_size(p) ; \
+    } \
+    void post_object(const std::function<void (uint8_t const * const, std::size_t)>& func ) const { \
+        mutils::post_object(func,a); \
+        mutils::post_object(func,b); \
+        mutils::post_object(func,c); \
+        mutils::post_object(func,d); \
+        mutils::post_object(func,e); \
+        mutils::post_object(func,f); \
+        mutils::post_object(func,g); \
+        mutils::post_object(func,h); \
+        mutils::post_object(func,i); \
+        mutils::post_object(func,j); \
+        mutils::post_object(func,k); \
+        mutils::post_object(func,l); \
+        mutils::post_object(func,m); \
+        mutils::post_object(func,n); \
+        mutils::post_object(func,o); \
+        mutils::post_object(func,p); \
+    }
+
+#define DEFAULT_SERIALIZE17(a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q) std::size_t to_bytes(uint8_t* ret) const { \
+        int bytes_written = mutils::to_bytes(a,ret);  \
+        bytes_written += mutils::to_bytes(b,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(c,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(d,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(e,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(f,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(g,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(h,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(i,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(j,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(k,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(l,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(m,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(n,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(o,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(p,ret + bytes_written); \
+        return bytes_written + mutils::to_bytes(q,ret + bytes_written); \
+    } \
+    std::size_t bytes_size() const { \
+        return mutils::bytes_size(a) + mutils::bytes_size(b) + mutils::bytes_size(c) + mutils::bytes_size(d) + mutils::bytes_size(e) + mutils::bytes_size(f) + mutils::bytes_size(g) + mutils::bytes_size(h) + mutils::bytes_size(i) + mutils::bytes_size(j) + mutils::bytes_size(k) + mutils::bytes_size(l) + mutils::bytes_size(m) + mutils::bytes_size(n) + mutils::bytes_size(o) + mutils::bytes_size(p) + mutils::bytes_size(q) ; \
+    } \
+    void post_object(const std::function<void (uint8_t const * const, std::size_t)>& func ) const { \
+        mutils::post_object(func,a); \
+        mutils::post_object(func,b); \
+        mutils::post_object(func,c); \
+        mutils::post_object(func,d); \
+        mutils::post_object(func,e); \
+        mutils::post_object(func,f); \
+        mutils::post_object(func,g); \
+        mutils::post_object(func,h); \
+        mutils::post_object(func,i); \
+        mutils::post_object(func,j); \
+        mutils::post_object(func,k); \
+        mutils::post_object(func,l); \
+        mutils::post_object(func,m); \
+        mutils::post_object(func,n); \
+        mutils::post_object(func,o); \
+        mutils::post_object(func,p); \
+        mutils::post_object(func,q); \
+    }
+
+#define DEFAULT_SERIALIZE18(a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r) std::size_t to_bytes(uint8_t* ret) const { \
+        int bytes_written = mutils::to_bytes(a,ret);  \
+        bytes_written += mutils::to_bytes(b,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(c,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(d,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(e,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(f,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(g,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(h,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(i,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(j,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(k,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(l,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(m,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(n,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(o,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(p,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(q,ret + bytes_written); \
+        return bytes_written + mutils::to_bytes(r,ret + bytes_written); \
+    } \
+    std::size_t bytes_size() const { \
+        return mutils::bytes_size(a) + mutils::bytes_size(b) + mutils::bytes_size(c) + mutils::bytes_size(d) + mutils::bytes_size(e) + mutils::bytes_size(f) + mutils::bytes_size(g) + mutils::bytes_size(h) + mutils::bytes_size(i) + mutils::bytes_size(j) + mutils::bytes_size(k) + mutils::bytes_size(l) + mutils::bytes_size(m) + mutils::bytes_size(n) + mutils::bytes_size(o) + mutils::bytes_size(p) + mutils::bytes_size(q) + mutils::bytes_size(r) ; \
+    } \
+    void post_object(const std::function<void (uint8_t const * const, std::size_t)>& func ) const { \
+        mutils::post_object(func,a); \
+        mutils::post_object(func,b); \
+        mutils::post_object(func,c); \
+        mutils::post_object(func,d); \
+        mutils::post_object(func,e); \
+        mutils::post_object(func,f); \
+        mutils::post_object(func,g); \
+        mutils::post_object(func,h); \
+        mutils::post_object(func,i); \
+        mutils::post_object(func,j); \
+        mutils::post_object(func,k); \
+        mutils::post_object(func,l); \
+        mutils::post_object(func,m); \
+        mutils::post_object(func,n); \
+        mutils::post_object(func,o); \
+        mutils::post_object(func,p); \
+        mutils::post_object(func,q); \
+        mutils::post_object(func,r); \
+    }
+
+#define DEFAULT_SERIALIZE19(a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s) std::size_t to_bytes(uint8_t* ret) const { \
+        int bytes_written = mutils::to_bytes(a,ret);  \
+        bytes_written += mutils::to_bytes(b,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(c,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(d,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(e,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(f,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(g,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(h,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(i,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(j,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(k,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(l,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(m,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(n,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(o,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(p,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(q,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(r,ret + bytes_written); \
+        return bytes_written + mutils::to_bytes(s,ret + bytes_written); \
+    } \
+    std::size_t bytes_size() const { \
+        return mutils::bytes_size(a) + mutils::bytes_size(b) + mutils::bytes_size(c) + mutils::bytes_size(d) + mutils::bytes_size(e) + mutils::bytes_size(f) + mutils::bytes_size(g) + mutils::bytes_size(h) + mutils::bytes_size(i) + mutils::bytes_size(j) + mutils::bytes_size(k) + mutils::bytes_size(l) + mutils::bytes_size(m) + mutils::bytes_size(n) + mutils::bytes_size(o) + mutils::bytes_size(p) + mutils::bytes_size(q) + mutils::bytes_size(r) + mutils::bytes_size(s) ; \
+    } \
+    void post_object(const std::function<void (uint8_t const * const, std::size_t)>& func ) const { \
+        mutils::post_object(func,a); \
+        mutils::post_object(func,b); \
+        mutils::post_object(func,c); \
+        mutils::post_object(func,d); \
+        mutils::post_object(func,e); \
+        mutils::post_object(func,f); \
+        mutils::post_object(func,g); \
+        mutils::post_object(func,h); \
+        mutils::post_object(func,i); \
+        mutils::post_object(func,j); \
+        mutils::post_object(func,k); \
+        mutils::post_object(func,l); \
+        mutils::post_object(func,m); \
+        mutils::post_object(func,n); \
+        mutils::post_object(func,o); \
+        mutils::post_object(func,p); \
+        mutils::post_object(func,q); \
+        mutils::post_object(func,r); \
+        mutils::post_object(func,s); \
+    }
+
+#define DEFAULT_SERIALIZE20(a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t) std::size_t to_bytes(uint8_t* ret) const { \
+        int bytes_written = mutils::to_bytes(a,ret);  \
+        bytes_written += mutils::to_bytes(b,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(c,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(d,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(e,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(f,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(g,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(h,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(i,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(j,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(k,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(l,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(m,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(n,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(o,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(p,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(q,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(r,ret + bytes_written); \
+        bytes_written += mutils::to_bytes(s,ret + bytes_written); \
+        return bytes_written + mutils::to_bytes(t,ret + bytes_written); \
+    } \
+    std::size_t bytes_size() const { \
+        return mutils::bytes_size(a) + mutils::bytes_size(b) + mutils::bytes_size(c) + mutils::bytes_size(d) + mutils::bytes_size(e) + mutils::bytes_size(f) + mutils::bytes_size(g) + mutils::bytes_size(h) + mutils::bytes_size(i) + mutils::bytes_size(j) + mutils::bytes_size(k) + mutils::bytes_size(l) + mutils::bytes_size(m) + mutils::bytes_size(n) + mutils::bytes_size(o) + mutils::bytes_size(p) + mutils::bytes_size(q) + mutils::bytes_size(r) + mutils::bytes_size(s) + mutils::bytes_size(t) ; \
+    } \
+    void post_object(const std::function<void (uint8_t const * const, std::size_t)>& func ) const { \
+        mutils::post_object(func,a); \
+        mutils::post_object(func,b); \
+        mutils::post_object(func,c); \
+        mutils::post_object(func,d); \
+        mutils::post_object(func,e); \
+        mutils::post_object(func,f); \
+        mutils::post_object(func,g); \
+        mutils::post_object(func,h); \
+        mutils::post_object(func,i); \
+        mutils::post_object(func,j); \
+        mutils::post_object(func,k); \
+        mutils::post_object(func,l); \
+        mutils::post_object(func,m); \
+        mutils::post_object(func,n); \
+        mutils::post_object(func,o); \
+        mutils::post_object(func,p); \
+        mutils::post_object(func,q); \
+        mutils::post_object(func,r); \
+        mutils::post_object(func,s); \
+        mutils::post_object(func,t); \
+    }
+
 #define DEFAULT_DESERIALIZE2(Name,a) \
     static std::unique_ptr<Name> from_bytes(mutils::DeserializationManager* dsm, uint8_t const * buf){ \
         auto a_obj = mutils::from_bytes<std::decay_t<decltype(a)> >(dsm, buf); \
@@ -568,6 +826,228 @@
         bytes_read += mutils::bytes_size(*l_obj); \
         auto m_obj = mutils::from_bytes<std::decay_t<decltype(m)> >(dsm, buf + bytes_read); \
         return std::make_unique<Name>(*a_obj,*b_obj,*c_obj,*d_obj,*e_obj,*f_obj,*g_obj,*h_obj,*i_obj,*j_obj,*k_obj,*l_obj,*m_obj, *(mutils::from_bytes<std::decay_t<decltype(n)> >(dsm, buf + bytes_read + mutils::bytes_size(*m_obj)))); \
+    }
+
+#define DEFAULT_DESERIALIZE16(Name,a,b,c,d,e,f,g,h,i,j,k,l,m,n,o) \
+    static std::unique_ptr<Name> from_bytes(mutils::DeserializationManager* dsm, uint8_t const * buf){ \
+        auto a_obj = mutils::from_bytes<std::decay_t<decltype(a)> >(dsm, buf); \
+        std::size_t bytes_read = mutils::bytes_size(*a_obj); \
+        auto b_obj = mutils::from_bytes<std::decay_t<decltype(b)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*b_obj); \
+        auto c_obj = mutils::from_bytes<std::decay_t<decltype(c)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*c_obj); \
+        auto d_obj = mutils::from_bytes<std::decay_t<decltype(d)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*d_obj); \
+        auto e_obj = mutils::from_bytes<std::decay_t<decltype(e)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*e_obj); \
+        auto f_obj = mutils::from_bytes<std::decay_t<decltype(f)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*f_obj); \
+        auto g_obj = mutils::from_bytes<std::decay_t<decltype(g)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*g_obj); \
+        auto h_obj = mutils::from_bytes<std::decay_t<decltype(h)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*h_obj); \
+        auto i_obj = mutils::from_bytes<std::decay_t<decltype(i)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*i_obj); \
+        auto j_obj = mutils::from_bytes<std::decay_t<decltype(j)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*j_obj); \
+        auto k_obj = mutils::from_bytes<std::decay_t<decltype(k)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*k_obj); \
+        auto l_obj = mutils::from_bytes<std::decay_t<decltype(l)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*l_obj); \
+        auto m_obj = mutils::from_bytes<std::decay_t<decltype(m)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*m_obj); \
+        auto n_obj = mutils::from_bytes<std::decay_t<decltype(n)> >(dsm, buf + bytes_read); \
+        return std::make_unique<Name>(*a_obj,*b_obj,*c_obj,*d_obj,*e_obj,*f_obj,*g_obj,*h_obj,*i_obj,*j_obj,*k_obj,*l_obj,*m_obj,*n_obj, *(mutils::from_bytes<std::decay_t<decltype(o)> >(dsm, buf + bytes_read + mutils::bytes_size(*n_obj)))); \
+    }
+
+#define DEFAULT_DESERIALIZE17(Name,a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p) \
+    static std::unique_ptr<Name> from_bytes(mutils::DeserializationManager* dsm, uint8_t const * buf){ \
+        auto a_obj = mutils::from_bytes<std::decay_t<decltype(a)> >(dsm, buf); \
+        std::size_t bytes_read = mutils::bytes_size(*a_obj); \
+        auto b_obj = mutils::from_bytes<std::decay_t<decltype(b)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*b_obj); \
+        auto c_obj = mutils::from_bytes<std::decay_t<decltype(c)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*c_obj); \
+        auto d_obj = mutils::from_bytes<std::decay_t<decltype(d)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*d_obj); \
+        auto e_obj = mutils::from_bytes<std::decay_t<decltype(e)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*e_obj); \
+        auto f_obj = mutils::from_bytes<std::decay_t<decltype(f)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*f_obj); \
+        auto g_obj = mutils::from_bytes<std::decay_t<decltype(g)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*g_obj); \
+        auto h_obj = mutils::from_bytes<std::decay_t<decltype(h)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*h_obj); \
+        auto i_obj = mutils::from_bytes<std::decay_t<decltype(i)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*i_obj); \
+        auto j_obj = mutils::from_bytes<std::decay_t<decltype(j)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*j_obj); \
+        auto k_obj = mutils::from_bytes<std::decay_t<decltype(k)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*k_obj); \
+        auto l_obj = mutils::from_bytes<std::decay_t<decltype(l)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*l_obj); \
+        auto m_obj = mutils::from_bytes<std::decay_t<decltype(m)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*m_obj); \
+        auto n_obj = mutils::from_bytes<std::decay_t<decltype(n)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*n_obj); \
+        auto o_obj = mutils::from_bytes<std::decay_t<decltype(o)> >(dsm, buf + bytes_read); \
+        return std::make_unique<Name>(*a_obj,*b_obj,*c_obj,*d_obj,*e_obj,*f_obj,*g_obj,*h_obj,*i_obj,*j_obj,*k_obj,*l_obj,*m_obj,*n_obj,*o_obj, *(mutils::from_bytes<std::decay_t<decltype(p)> >(dsm, buf + bytes_read + mutils::bytes_size(*o_obj)))); \
+    }
+
+#define DEFAULT_DESERIALIZE18(Name,a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q) \
+    static std::unique_ptr<Name> from_bytes(mutils::DeserializationManager* dsm, uint8_t const * buf){ \
+        auto a_obj = mutils::from_bytes<std::decay_t<decltype(a)> >(dsm, buf); \
+        std::size_t bytes_read = mutils::bytes_size(*a_obj); \
+        auto b_obj = mutils::from_bytes<std::decay_t<decltype(b)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*b_obj); \
+        auto c_obj = mutils::from_bytes<std::decay_t<decltype(c)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*c_obj); \
+        auto d_obj = mutils::from_bytes<std::decay_t<decltype(d)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*d_obj); \
+        auto e_obj = mutils::from_bytes<std::decay_t<decltype(e)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*e_obj); \
+        auto f_obj = mutils::from_bytes<std::decay_t<decltype(f)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*f_obj); \
+        auto g_obj = mutils::from_bytes<std::decay_t<decltype(g)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*g_obj); \
+        auto h_obj = mutils::from_bytes<std::decay_t<decltype(h)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*h_obj); \
+        auto i_obj = mutils::from_bytes<std::decay_t<decltype(i)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*i_obj); \
+        auto j_obj = mutils::from_bytes<std::decay_t<decltype(j)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*j_obj); \
+        auto k_obj = mutils::from_bytes<std::decay_t<decltype(k)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*k_obj); \
+        auto l_obj = mutils::from_bytes<std::decay_t<decltype(l)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*l_obj); \
+        auto m_obj = mutils::from_bytes<std::decay_t<decltype(m)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*m_obj); \
+        auto n_obj = mutils::from_bytes<std::decay_t<decltype(n)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*n_obj); \
+        auto o_obj = mutils::from_bytes<std::decay_t<decltype(o)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*o_obj); \
+        auto p_obj = mutils::from_bytes<std::decay_t<decltype(p)> >(dsm, buf + bytes_read); \
+        return std::make_unique<Name>(*a_obj,*b_obj,*c_obj,*d_obj,*e_obj,*f_obj,*g_obj,*h_obj,*i_obj,*j_obj,*k_obj,*l_obj,*m_obj,*n_obj,*o_obj,*p_obj, *(mutils::from_bytes<std::decay_t<decltype(q)> >(dsm, buf + bytes_read + mutils::bytes_size(*p_obj)))); \
+    }
+
+#define DEFAULT_DESERIALIZE19(Name,a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r) \
+    static std::unique_ptr<Name> from_bytes(mutils::DeserializationManager* dsm, uint8_t const * buf){ \
+        auto a_obj = mutils::from_bytes<std::decay_t<decltype(a)> >(dsm, buf); \
+        std::size_t bytes_read = mutils::bytes_size(*a_obj); \
+        auto b_obj = mutils::from_bytes<std::decay_t<decltype(b)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*b_obj); \
+        auto c_obj = mutils::from_bytes<std::decay_t<decltype(c)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*c_obj); \
+        auto d_obj = mutils::from_bytes<std::decay_t<decltype(d)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*d_obj); \
+        auto e_obj = mutils::from_bytes<std::decay_t<decltype(e)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*e_obj); \
+        auto f_obj = mutils::from_bytes<std::decay_t<decltype(f)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*f_obj); \
+        auto g_obj = mutils::from_bytes<std::decay_t<decltype(g)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*g_obj); \
+        auto h_obj = mutils::from_bytes<std::decay_t<decltype(h)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*h_obj); \
+        auto i_obj = mutils::from_bytes<std::decay_t<decltype(i)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*i_obj); \
+        auto j_obj = mutils::from_bytes<std::decay_t<decltype(j)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*j_obj); \
+        auto k_obj = mutils::from_bytes<std::decay_t<decltype(k)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*k_obj); \
+        auto l_obj = mutils::from_bytes<std::decay_t<decltype(l)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*l_obj); \
+        auto m_obj = mutils::from_bytes<std::decay_t<decltype(m)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*m_obj); \
+        auto n_obj = mutils::from_bytes<std::decay_t<decltype(n)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*n_obj); \
+        auto o_obj = mutils::from_bytes<std::decay_t<decltype(o)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*o_obj); \
+        auto p_obj = mutils::from_bytes<std::decay_t<decltype(p)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*p_obj); \
+        auto q_obj = mutils::from_bytes<std::decay_t<decltype(q)> >(dsm, buf + bytes_read); \
+        return std::make_unique<Name>(*a_obj,*b_obj,*c_obj,*d_obj,*e_obj,*f_obj,*g_obj,*h_obj,*i_obj,*j_obj,*k_obj,*l_obj,*m_obj,*n_obj,*o_obj,*p_obj,*q_obj, *(mutils::from_bytes<std::decay_t<decltype(r)> >(dsm, buf + bytes_read + mutils::bytes_size(*q_obj)))); \
+    }
+
+#define DEFAULT_DESERIALIZE20(Name,a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s) \
+    static std::unique_ptr<Name> from_bytes(mutils::DeserializationManager* dsm, uint8_t const * buf){ \
+        auto a_obj = mutils::from_bytes<std::decay_t<decltype(a)> >(dsm, buf); \
+        std::size_t bytes_read = mutils::bytes_size(*a_obj); \
+        auto b_obj = mutils::from_bytes<std::decay_t<decltype(b)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*b_obj); \
+        auto c_obj = mutils::from_bytes<std::decay_t<decltype(c)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*c_obj); \
+        auto d_obj = mutils::from_bytes<std::decay_t<decltype(d)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*d_obj); \
+        auto e_obj = mutils::from_bytes<std::decay_t<decltype(e)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*e_obj); \
+        auto f_obj = mutils::from_bytes<std::decay_t<decltype(f)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*f_obj); \
+        auto g_obj = mutils::from_bytes<std::decay_t<decltype(g)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*g_obj); \
+        auto h_obj = mutils::from_bytes<std::decay_t<decltype(h)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*h_obj); \
+        auto i_obj = mutils::from_bytes<std::decay_t<decltype(i)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*i_obj); \
+        auto j_obj = mutils::from_bytes<std::decay_t<decltype(j)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*j_obj); \
+        auto k_obj = mutils::from_bytes<std::decay_t<decltype(k)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*k_obj); \
+        auto l_obj = mutils::from_bytes<std::decay_t<decltype(l)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*l_obj); \
+        auto m_obj = mutils::from_bytes<std::decay_t<decltype(m)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*m_obj); \
+        auto n_obj = mutils::from_bytes<std::decay_t<decltype(n)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*n_obj); \
+        auto o_obj = mutils::from_bytes<std::decay_t<decltype(o)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*o_obj); \
+        auto p_obj = mutils::from_bytes<std::decay_t<decltype(p)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*p_obj); \
+        auto q_obj = mutils::from_bytes<std::decay_t<decltype(q)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*q_obj); \
+        auto r_obj = mutils::from_bytes<std::decay_t<decltype(r)> >(dsm, buf + bytes_read); \
+        return std::make_unique<Name>(*a_obj,*b_obj,*c_obj,*d_obj,*e_obj,*f_obj,*g_obj,*h_obj,*i_obj,*j_obj,*k_obj,*l_obj,*m_obj,*n_obj,*o_obj,*p_obj,*q_obj,*r_obj, *(mutils::from_bytes<std::decay_t<decltype(s)> >(dsm, buf + bytes_read + mutils::bytes_size(*r_obj)))); \
+    }
+
+#define DEFAULT_DESERIALIZE21(Name,a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t) \
+    static std::unique_ptr<Name> from_bytes(mutils::DeserializationManager* dsm, uint8_t const * buf){ \
+        auto a_obj = mutils::from_bytes<std::decay_t<decltype(a)> >(dsm, buf); \
+        std::size_t bytes_read = mutils::bytes_size(*a_obj); \
+        auto b_obj = mutils::from_bytes<std::decay_t<decltype(b)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*b_obj); \
+        auto c_obj = mutils::from_bytes<std::decay_t<decltype(c)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*c_obj); \
+        auto d_obj = mutils::from_bytes<std::decay_t<decltype(d)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*d_obj); \
+        auto e_obj = mutils::from_bytes<std::decay_t<decltype(e)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*e_obj); \
+        auto f_obj = mutils::from_bytes<std::decay_t<decltype(f)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*f_obj); \
+        auto g_obj = mutils::from_bytes<std::decay_t<decltype(g)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*g_obj); \
+        auto h_obj = mutils::from_bytes<std::decay_t<decltype(h)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*h_obj); \
+        auto i_obj = mutils::from_bytes<std::decay_t<decltype(i)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*i_obj); \
+        auto j_obj = mutils::from_bytes<std::decay_t<decltype(j)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*j_obj); \
+        auto k_obj = mutils::from_bytes<std::decay_t<decltype(k)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*k_obj); \
+        auto l_obj = mutils::from_bytes<std::decay_t<decltype(l)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*l_obj); \
+        auto m_obj = mutils::from_bytes<std::decay_t<decltype(m)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*m_obj); \
+        auto n_obj = mutils::from_bytes<std::decay_t<decltype(n)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*n_obj); \
+        auto o_obj = mutils::from_bytes<std::decay_t<decltype(o)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*o_obj); \
+        auto p_obj = mutils::from_bytes<std::decay_t<decltype(p)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*p_obj); \
+        auto q_obj = mutils::from_bytes<std::decay_t<decltype(q)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*q_obj); \
+        auto r_obj = mutils::from_bytes<std::decay_t<decltype(r)> >(dsm, buf + bytes_read); \
+        bytes_read += mutils::bytes_size(*r_obj); \
+        auto s_obj = mutils::from_bytes<std::decay_t<decltype(s)> >(dsm, buf + bytes_read); \
+        return std::make_unique<Name>(*a_obj,*b_obj,*c_obj,*d_obj,*e_obj,*f_obj,*g_obj,*h_obj,*i_obj,*j_obj,*k_obj,*l_obj,*m_obj,*n_obj,*o_obj,*p_obj,*q_obj,*r_obj,*s_obj, *(mutils::from_bytes<std::decay_t<decltype(t)> >(dsm, buf + bytes_read + mutils::bytes_size(*s_obj)))); \
     }
 
 
