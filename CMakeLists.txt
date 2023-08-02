@@ -21,10 +21,20 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 find_package(spdlog 1.3.1 REQUIRED)
 find_package(OpenSSL 1.1.1 REQUIRED)
 find_path(ASIO_PATH asio.hpp) # Since ASIO doesn't export a CMake target, we have to find it manually
+
+# Add nlohmann json 
+find_package(nlohmann_json 3.11.2 REQUIRED)
+if(nlohmann_json_FOUND)
+  include_directories(${nlohmann_json_INCLUDE_DIRS})
+else()
+  message(STATUS "nlohmann_json NOT Found !")
+endif(nlohmann_json_FOUND)
+
 if(ASIO_PATH STREQUAL "ASIO_PATH-NOTFOUND")
     message(FATAL_ERROR "ASIO not found. You can download it from https://think-async.com/Asio")
 endif()
 include_directories(${ASIO_PATH})
+
 # mutils library, which is required for mutils-serialization
 find_package(mutils)
 if (NOT ${mutils_FOUND})

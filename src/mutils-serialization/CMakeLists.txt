@@ -8,7 +8,7 @@ target_include_directories(mutils-serialization PRIVATE
   $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>)
 
 add_executable(serialization-test serialization-test.cpp)
-target_link_libraries(serialization-test mutils-serialization)
+target_link_libraries(serialization-test mutils-serialization nlohmann_json::nlohmann_json)
 target_include_directories(serialization-test PRIVATE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
   $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>)

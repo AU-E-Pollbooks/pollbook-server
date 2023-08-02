@@ -21,6 +21,16 @@ CheckinService::CheckinService()
           signer(openssl::EnvelopeKey::from_pem_private(Config::getString(Config::SECTION_SECURITY, Config::LOCAL_PRIVATE_KEY)),
                  signature_digest_algorithm) {
     load_voter_list(Config::getString(Config::SECTION_BASIC, Config::VOTER_LIST_FILE));
+    network_thread = std::thread([&] {
+        network_io_context.run();
+    });
+}
+
+CheckinService::~CheckinService() {
+    network_io_context.stop();
+    if (network_thread.joinable()) {
+        network_thread.join();
+    }
 }
 
 void CheckinService::do_accept() {
@@ -43,41 +53,51 @@ void CheckinService::handle_accept(const asio::error_code& error, asio::ip::tcp:
 
 void CheckinService::start_size_read(asio::ip::tcp::endpoint client_ip) {
     // Put this integer on the heap so it stays in memory after this method ends
-    std::shared_ptr<std::size_t> message_size = std::make_shared<std::size_t>();
-    // Make an asio "buffer" that points to the address of the integer and read 4 bytes into it
-    asio::async_read(client_sockets.at(client_ip),
-                     asio::buffer(&(*message_size), sizeof(std::size_t)),
-                     [this, client_ip, message_size](const asio::error_code& error, std::size_t bytes_read) {
-                         if(!error) {
-                             logger->debug("Client at {}: Message size is {} bytes", client_ip, *message_size);
-                             start_payload_read(client_ip, *message_size);
-                         } else if(error == asio::error::eof || error == asio::error::connection_aborted) {
-                             logger->debug("Client at {} disconnected before sending message size", client_ip);
-                             client_sockets.erase(client_ip);
-                         }
-                     });
-}
+    auto message_size = std::make_shared<std::size_t>();
+    auto msg = std::make_shared<std::string>();
+    std::shared_ptr<std::string> msg_size_str = std::make_shared<std::string>();
+    // Make an asio buffer 
+    auto buf = std::make_shared<asio::streambuf>();
+    asio::async_read_until(client_sockets.at(client_ip), *buf, "\n", 
+        [this, client_ip, message_size, msg_size_str, buf, msg](const asio::error_code& error, std::size_t bytes_read) {
+            if (!error) {
+                *msg_size_str = std::string(asio::buffer_cast<const char*>(buf->data()), bytes_read);
+                std::string msg_size;
+                std::stringstream ss(*msg_size_str);
+                ss >> *message_size;
+                logger->debug("Client at {}: Message size is {} bytes", client_ip, *message_size);
+                buf->consume(bytes_read);
+                asio::async_read_until(client_sockets.at(client_ip), *buf, "\n",
+                        [this, client_ip, buf, message_size, msg](const asio::error_code& error, std::size_t bytes_read) {
+                            if (!error) {
+                                *msg = std::string(asio::buffer_cast<const char*>(buf->data()), bytes_read);
+                                std::stringstream ss(*msg);
+                                std::string json_string;
+                                ss >> json_string;
+                                buf->consume(bytes_read);
 
-void CheckinService::start_payload_read(const asio::ip::tcp::endpoint& client_ip, std::size_t size_of_message) {
-    // Allocate a buffer for the message
-    client_receive_buffers.emplace(client_ip, std::vector<uint8_t>(size_of_message));
-    // Asynchronously read until it is full
-    asio::async_read(client_sockets.at(client_ip),
-                     asio::buffer(client_receive_buffers.at(client_ip)),
-                     [this, client_ip](const asio::error_code& error, std::size_t bytes_transferred) {
-                         if(!error) {
-                             assert(bytes_transferred == client_receive_buffers.at(client_ip).size());
-                             logger->debug("Finished reading message of size {} from client at {}", client_receive_buffers.at(client_ip).size(), client_ip);
-                             // There's only one type of message the client could send, so deserialize and handle it
-                             auto request = mutils::from_bytes<CheckinRequest>(nullptr, client_receive_buffers.at(client_ip).data());
-                             handle_checkin_request(client_ip, *request);
-                         } else if(error == asio::error::eof || error == asio::error::connection_aborted) {
-                             logger->debug("Client at {} disconnected before sending entire message", client_ip);
-                             client_sockets.erase(client_ip);
-                         } else {
-                             logger->warn("Unexpected I/O error when reading a request message from client {}. Error: {}", client_ip, error.message());
-                         }
-                     });
+                                logger->debug("Finished reading message of size {} from client at {}", bytes_read, client_ip);
+                                // Converting the string into json
+                                try {
+                                    nlohmann::json json = nlohmann::json::parse(json_string);
+                                    CheckinRequest request = CheckinRequest::FromJson(json);
+
+                                    handle_checkin_request(client_ip, request);
+                                } catch(const nlohmann::json::parse_error& e) {
+                                    logger->debug("Failed to parse JSON: {}", e.what());
+                                }
+                            } else if(error == asio::error::eof || error == asio::error::connection_aborted) {
+                                logger->debug("Client at {} disconnected before sending entire message", client_ip);
+                                client_sockets.erase(client_ip);
+                            } else {
+                                logger->warn("Unexpected I/O error when reading a request message from client {}. Error: {}", client_ip, error.message());
+                            }
+                        });
+            } else if(error == asio::error::eof || error == asio::error::connection_aborted) {
+                logger->debug("Client at {} disconnected before sending message size", client_ip);
+                client_sockets.erase(client_ip);
+            }
+        });
 }
 
 void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& client_ip, const CheckinRequest& request) {
@@ -117,12 +137,16 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
     signer.add_bytes(response_body_bytes.data(), response_body_bytes.size());
     // Serialize and send the response message, including the signature
     CheckinResponse response(std::move(response_body), signer.finalize());
-    std::size_t response_size = mutils::bytes_size(response);
-    std::vector<uint8_t> response_bytes(response_size + sizeof(response_size));
-    mutils::to_bytes(response_size, response_bytes.data());
-    mutils::to_bytes(response, response_bytes.data() + sizeof(response_size));
+    
+    // convert response into json and convert it into a string
+    nlohmann::json response_json = CheckinResponse::ToJson(response);
+
+    std::size_t response_size = response_json.size();
+    std::string response_message_string = response_json.dump();
+    std::string response_string = std::to_string(response_size) + "\n" + response_message_string +"\n";
+
     logger->debug("Sending a response of size {} to client at {}", response_size, client_ip);
-    asio::write(client_sockets.at(client_ip), asio::buffer(response_bytes));
+    asio::write(client_sockets.at(client_ip), asio::buffer(response_string));
     // Enqueue another read operation for the next message from this client (if any)
     start_size_read(client_ip);
 }
@@ -134,6 +158,7 @@ bool CheckinService::validate_client_request(const CheckinRequest& request, std:
     openssl::Verifier& verifier = client_verifiers.at(request.body.client_id_num);
     verifier.init();
     verifier.add_bytes(request_body_bytes.data(), request_body_bytes.size());
+
     if(!verifier.finalize(request.client_signature)) {
         logger->debug("Rejecting client {}'s check-in request for {} {} {} (UID {}) because the client's signature on the message was invalid",
                       request.body.client_id_num, request.body.first_name, request.body.middle_name, request.body.last_name, request.body.voter_unique_id);

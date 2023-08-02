@@ -115,7 +115,7 @@ public:
 
     void handle_id_response(const VerifiedVoterID& response);
 
-    void start_checkin_response_read(std::size_t message_size);
+    void start_checkin_response_read(std::size_t message_size, std::shared_ptr<asio::streambuf>);
 
     void handle_checkin_response(const CheckinResponse& response);
 

@@ -2,6 +2,8 @@
 
 #include "mutils-serialization/SerializationSupport.hpp"
 #include "voter_id_request.hpp"
+#include <nlohmann/json.hpp>
+#include "openssl/base64.hpp"
 
 #include <cstdint>
 #include <string>
@@ -78,6 +80,35 @@ struct CheckinRequest : public mutils::ByteRepresentable {
               client_signature(client_signature) {}
 
     DEFAULT_SERIALIZATION_SUPPORT(CheckinRequest, body, client_signature);
+    static nlohmann::json ToJson(const CheckinRequest& request) {
+        nlohmann::json json;
+        std::string signature_base64 = Base64::encode(request.client_signature.data(), request.client_signature.size());
+        json["body"]["client_id_num"] = request.body.client_id_num;
+        json["body"]["timestamp"] = request.body.timestamp;
+        json["body"]["last_name"] = request.body.last_name;
+        json["body"]["first_name"] = request.body.first_name;
+        json["body"]["middle_name"] = request.body.middle_name;
+        json["body"]["voter_unique_id"] = request.body.voter_unique_id;
+        json["body"]["verified_id_message"] = VerifiedVoterID::ToJson(request.body.verified_id_message);
+        json["client_signature"] = signature_base64;
+        return json;
+    }
+
+    static CheckinRequest FromJson(const nlohmann::json& json) {
+        CheckinRequest::Body request_body(
+                json["body"]["client_id_num"],
+                json["body"]["timestamp"],
+                json["body"]["last_name"],
+                json["body"]["first_name"],
+                json["body"]["middle_name"],
+                json["body"]["voter_unique_id"],
+                VerifiedVoterID::FromJson(json["body"]["verified_id_message"]));
+
+        std::vector<std::uint8_t> client_signature = Base64::decode(json["client_signature"]);
+        CheckinRequest request(std::move(request_body), client_signature);
+
+        return request;
+    }
 };
 
 /**
@@ -139,6 +170,36 @@ struct CheckinResponse : public mutils::ByteRepresentable {
               checkin_service_signature(checkin_service_signature) {}
 
     DEFAULT_SERIALIZATION_SUPPORT(CheckinResponse, body, checkin_service_signature);
+    // Functions to convert json to a response and vice versa
+    static nlohmann::json ToJson(const CheckinResponse& response) {
+        nlohmann::json json;
+        std::string signature_base64 = Base64::encode(response.checkin_service_signature.data(), response.checkin_service_signature.size());
+        json["body"]["approved"] = response.body.approved;
+        json["body"]["requesting_client_id"] = response.body.requesting_client_id;
+        json["body"]["timestamp"] = response.body.timestamp;
+        json["body"]["last_name"] = response.body.last_name;
+        json["body"]["first_name"] = response.body.first_name;
+        json["body"]["middle_name"] = response.body.middle_name;
+        json["body"]["voter_unique_id"] = response.body.voter_unique_id;
+        json["checkin_service_signature"] = signature_base64;
+        return json;
+    }
+
+    static CheckinResponse FromJson(const nlohmann::json& json) {
+        CheckinResponse::Body response_body(
+                json["body"]["approved"],
+                json["body"]["requesting_client_id"],
+                json["body"]["timestamp"],
+                json["body"]["last_name"],
+                json["body"]["first_name"],
+                json["body"]["middle_name"],
+                json["body"]["voter_unique_id"]);
+
+        std::vector<std::uint8_t> service_signature = Base64::decode(json["checkin_service_signature"]);
+        CheckinResponse response(std::move(response_body), service_signature);
+
+        return response;
+    }
 };
 
 }  // namespace epollbook

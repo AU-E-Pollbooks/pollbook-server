@@ -32,6 +32,7 @@ private:
     std::shared_ptr<spdlog::logger> logger;
     /** The io_context that all the sockets will use */
     asio::io_context network_io_context;
+    std::thread network_thread;
     /**
      * A "server socket" that listens for incoming connections from clients
      */
@@ -144,6 +145,7 @@ public:
      * @param csv_file_path A path to the CSV file containing the list of voters.
      */
     void load_voter_list(const std::string& csv_file_path);
+    ~CheckinService();
 };
 
 }  // namespace epollbook

@@ -68,17 +68,21 @@ void PollbookClient::start_id_request_write(std::uint64_t timestamp, const std::
     mutils::to_bytes(validation_request_body, body_bytes.data());
     private_key_signer.init();
     private_key_signer.add_bytes(body_bytes.data(), body_bytes.size());
+    
     // Move the body into a full message, with the signature at the end
-    VoterIDRequest validation_request(std::move(validation_request_body), private_key_signer.finalize());
+    VoterIDRequest validation_request(std::move(validation_request_body), private_key_signer.finalize()); 
+
     // Serialize and send the message
     std::size_t message_size = mutils::bytes_size(validation_request);
     std::vector<std::uint8_t> validation_request_buffer(message_size + sizeof(message_size));
     mutils::to_bytes(message_size, validation_request_buffer.data());
     mutils::to_bytes(validation_request, validation_request_buffer.data() + sizeof(message_size));
+
     asio::async_write(id_server_socket,
                       asio::buffer(validation_request_buffer),
                       [this](const asio::error_code& error, std::size_t bytes_written) {
                           if(!error) {
+                              logger->debug("Sent {} bytes to id server", bytes_written);
                               logger->debug("Sent a request to verify the voter's ID to the ID service.");
                               // After sending the request, start waiting for the response, which will start with a "size" header
                               start_size_read(true);
@@ -91,6 +95,7 @@ void PollbookClient::start_id_request_write(std::uint64_t timestamp, const std::
 
 void PollbookClient::start_size_read(bool on_id_server) {
     std::shared_ptr<std::size_t> message_size = std::make_shared<std::size_t>();
+    auto buf = std::make_shared<asio::streambuf>();
     if(on_id_server) {
         asio::async_read(id_server_socket,
                          asio::buffer(&(*message_size), sizeof(std::size_t)),
@@ -109,22 +114,25 @@ void PollbookClient::start_size_read(bool on_id_server) {
                              }
                          });
     } else {
-        asio::async_read(checkin_server_socket,
-                         asio::buffer(&(*message_size), sizeof(std::size_t)),
-                         [this, message_size](const asio::error_code& error, std::size_t bytes_read) {
-                             if(!error) {
-                                 logger->debug("Read {} bytes from socket into a std::size_t", bytes_read);
-                                 assert(bytes_read == sizeof(std::size_t));
-                                 logger->debug("Message received from checkin service, size {} bytes", *message_size);
-                                 start_checkin_response_read(*message_size);
-                             } else if(error == asio::error::eof || error == asio::error::connection_aborted) {
-                                 logger->error("Checkin service disconnected before sending message size");
-                                 current_request_promise.set_value({false, "Network error: Checkin service disconnected"});
-                             } else {
-                                 logger->error("Unexpected error when reading message size from checkin service: {}", error.message());
-                                 current_request_promise.set_value({false, "Network error: I/O error when reading from the checkin service"});
-                             }
-                         });
+        asio::async_read_until(checkin_server_socket, *buf, "\n",
+                [this, buf, message_size](const asio::error_code& error, std::size_t bytes_read) {
+                    if (!error) {
+                        logger->debug("Read {} bytes from socket into a std::size_t", bytes_read);
+                        std::string full_buffer = std::string(asio::buffer_cast<const char*>(buf->data()), bytes_read);
+                        std::stringstream ss(full_buffer);
+                        ss >> *message_size;
+                        buf->consume(bytes_read);
+                        logger->debug("Message received from checkin service, size {} bytes", *message_size);
+                        start_checkin_response_read(*message_size, buf);
+                    } else if(error == asio::error::eof || error == asio::error::connection_aborted) {
+                        logger->error("Checkin service disconnected before sending message size");
+                        current_request_promise.set_value({false, "Network error: Checkin service disconnected"});
+                    } else {
+                        logger->error("Unexpected error when reading message size from checkin service: {}", error.message());
+                        current_request_promise.set_value({false, "Network error: I/O error when reading from the checkin service"});
+                    }
+
+                });
     }
 }
 
@@ -180,13 +188,15 @@ void PollbookClient::start_checkin_request_write(const VerifiedVoterID& verified
     private_key_signer.add_bytes(request_body_bytes.data(), request_body_bytes.size());
     // Construct the message, with the signature at the end
     CheckinRequest request(std::move(request_body), private_key_signer.finalize());
-    // Serialize and send the message (note: this will redundantly serialize the body again)
-    std::size_t message_size = mutils::bytes_size(request);
-    std::vector<std::uint8_t> request_message_buffer(message_size + sizeof(message_size));
-    mutils::to_bytes(message_size, request_message_buffer.data());
-    mutils::to_bytes(request, request_message_buffer.data() + sizeof(message_size));
+
+    // Serialize and send the message 
+    nlohmann::json request_json = CheckinRequest::ToJson(request);
+    std::string request_message_string = request_json.dump();
+    std::size_t message_size = request_message_string.size();
+    std::string buffer = std::to_string(message_size) + "\n" + request_message_string +"\n";
+
     asio::async_write(checkin_server_socket,
-                      asio::buffer(request_message_buffer),
+                      asio::buffer(buffer),
                       [this](const asio::error_code& error, std::size_t bytes_written) {
                           if(!error) {
                               logger->debug("Sent a check-in request for voter {} {} {} to check-in service.", std::get<0>(current_request_voter_name), std::get<1>(current_request_voter_name), std::get<2>(current_request_voter_name));
@@ -198,23 +208,27 @@ void PollbookClient::start_checkin_request_write(const VerifiedVoterID& verified
                       });
 }
 
-void PollbookClient::start_checkin_response_read(std::size_t message_size) {
+void PollbookClient::start_checkin_response_read(std::size_t message_size, std::shared_ptr<asio::streambuf> buf) {
     checkin_server_buffer.resize(message_size);
-    asio::async_read(checkin_server_socket,
-                     asio::buffer(checkin_server_buffer),
-                     [this](const asio::error_code& error, std::size_t bytes_read) {
-                         if(!error) {
-                             assert(bytes_read == checkin_server_buffer.size());
-                             auto response = mutils::from_bytes<CheckinResponse>(nullptr, checkin_server_buffer.data());
-                             handle_checkin_response(*response);
-                         } else if(error == asio::error::eof || error == asio::error::connection_aborted) {
-                             logger->error("Checkin service disconnected before sending entire response message");
-                             current_request_promise.set_value({false, "Network error: Check-in service disconnected"});
-                         } else {
-                             logger->error("Unexpected error when reading CheckinResponse from check-in service: {}", error.message());
-                             current_request_promise.set_value({false, "Network error: I/O error when reading from the check-in service"});
-                         }
-                     });
+
+    asio::async_read_until(checkin_server_socket, *buf, "\n",
+            [this, buf](const asio::error_code& error, std::size_t bytes_read) {
+                if (!error) {
+                    std::string full_buffer = std::string(asio::buffer_cast<const char*>(buf->data()), bytes_read);
+
+                    buf->consume(bytes_read);
+                    nlohmann::json response_json = nlohmann::json::parse(full_buffer);
+                    CheckinResponse response = CheckinResponse::FromJson(response_json);
+                    handle_checkin_response(response);
+                } else if(error == asio::error::eof || error == asio::error::connection_aborted) {
+                    logger->error("Checkin service disconnected before sending message size");
+                    current_request_promise.set_value({false, "Network error: Checkin service disconnected"});
+                } else {
+                    logger->error("Unexpected error when reading message size from checkin service: {}", error.message());
+                    current_request_promise.set_value({false, "Network error: I/O error when reading from the checkin service"});
+                }
+
+            });
 }
 
 void PollbookClient::handle_checkin_response(const CheckinResponse& response) {

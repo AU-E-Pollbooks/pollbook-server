@@ -1,6 +1,8 @@
 #pragma once
 
 #include "mutils-serialization/SerializationSupport.hpp"
+#include "openssl/base64.hpp"
+#include <nlohmann/json.hpp>
 
 #include <cstdint>
 #include <vector>
@@ -58,6 +60,31 @@ struct VoterIDRequest : public mutils::ByteRepresentable {
               client_signature(client_signature) {}
 
     DEFAULT_SERIALIZATION_SUPPORT(VoterIDRequest, body, client_signature);
+    static nlohmann::json ToJson(const VoterIDRequest& request) {
+        nlohmann::json json;
+        std::string signature_base64 = Base64::encode(request.client_signature.data(), request.client_signature.size());
+        std::string voter_id_str = Base64::encode(request.body.voter_id_data.data(), request.body.voter_id_data.size());
+        json["body"]["client_id_num"] = request.body.client_id_num;
+        json["body"]["timestamp"] = request.body.timestamp;
+        json["body"]["voter_id_data"] = voter_id_str;
+        json["client_signature"] = signature_base64;
+        return json;
+    } 
+
+    static VoterIDRequest FromJson(const nlohmann::json& json) {
+        std::vector<uint8_t> voter_id = Base64::decode(json["body"]["voter_id_data"]);
+        VoterIDRequest::Body request_body(
+                json["body"]["client_id_num"],
+                json["body"]["timestamp"],
+                voter_id); 
+        
+
+        std::vector<std::uint8_t> client_signature = Base64::decode(json["client_signature"]);
+
+        VoterIDRequest request(std::move(request_body), client_signature);
+
+        return request;
+    }
 };
 
 /**
@@ -95,6 +122,21 @@ struct VerifiedVoterID : public mutils::ByteRepresentable {
               id_service_signature(id_service_signature) {}
 
     DEFAULT_SERIALIZATION_SUPPORT(VerifiedVoterID, presented_id, voter_unique_id, id_service_signature);
+    static nlohmann::json ToJson(const VerifiedVoterID& ID) {
+        nlohmann::json json;
+        std::string signature_base64 = Base64::encode(ID.id_service_signature.data(), ID.id_service_signature.size());
+        json["presented_id"] = VoterIDRequest::ToJson(ID.presented_id);
+        json["voter_unique_id"] = ID.voter_unique_id;
+        json["id_service_signature"] = signature_base64;
+        return json;
+    }
+
+    static VerifiedVoterID FromJson(const nlohmann::json& json) {
+        VoterIDRequest presented_id = VoterIDRequest::FromJson(json["presented_id"]);
+        std::uint32_t voter_unique_id = json["voter_unique_id"];
+        std::vector<std::uint8_t> id_service_signature = Base64::decode(json["id_service_signature"]);
+        return VerifiedVoterID(presented_id, voter_unique_id, id_service_signature);
+    }
 };
 
 }  // namespace epollbook

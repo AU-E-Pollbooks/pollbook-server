@@ -15,7 +15,8 @@ target_include_directories(epollbook PUBLIC
 # Specify library dependencies for this target
 target_link_libraries(epollbook
     OpenSSL::Crypto
-    spdlog::spdlog)
+    spdlog::spdlog
+    nlohmann_json::nlohmann_json)
 
 # Set the C++ version for compiling this target (not really necessary if the global setting is used, but could help make the library more portable in the future)
 target_compile_features(epollbook PUBLIC cxx_std_17)
