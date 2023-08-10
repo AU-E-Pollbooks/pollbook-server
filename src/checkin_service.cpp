@@ -11,6 +11,7 @@ namespace epollbook {
 
 CheckinService::CheckinService()
         : logger(spdlog::get(LogUtils::get_default_logger_name())),
+          timer(network_io_context),
           connection_listener(network_io_context,
                               asio::ip::tcp::endpoint(
                                   asio::ip::tcp::tcp::v4(),
@@ -35,9 +36,9 @@ CheckinService::~CheckinService() {
 
 void CheckinService::do_accept() {
     connection_listener.async_accept(network_io_context,
-                                     [this](const asio::error_code& error, asio::ip::tcp::socket peer) {
-                                         handle_accept(error, std::move(peer));
-                                     });
+            [this](const asio::error_code& error, asio::ip::tcp::socket peer) {
+                handle_accept(error, std::move(peer));
+            });
 }
 
 void CheckinService::handle_accept(const asio::error_code& error, asio::ip::tcp::socket new_socket) {
@@ -101,6 +102,24 @@ void CheckinService::start_size_read(asio::ip::tcp::endpoint client_ip) {
 }
 
 void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& client_ip, const CheckinRequest& request) {
+    if (is_pending) {
+        pending_req = nullptr;
+        timer.cancel();
+        pending_req.reset();
+    }
+    else {
+        pending_req = std::make_unique<CheckinRequest>(request);
+        pending_client_ip = client_ip;
+        is_pending = true;
+        timer.expires_after(std::chrono::seconds(5));
+        timer.async_wait([&](const asio::error_code& error) {
+                if (error != asio::error::operation_aborted) {
+                    // Enqueue another read operation for the next message from this client (if any)
+                    is_pending = false;
+                    pending_req.reset();
+                }
+        });
+    }
     // Ensure the public key for this client is in memory
     if(client_verifiers.find(request.body.client_id_num) == client_verifiers.end()) {
         if(!load_client_public_key(request.body.client_id_num)) {
@@ -119,7 +138,10 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
             if(find_voter_result->second == VoterStatus::ELIGIBLE) {
                 find_voter_result->second = VoterStatus::CHECKED_IN;
                 logger->debug("Accepted a check-in request for voter {} {} {} (UID {}) from client {}", request.body.first_name, request.body.middle_name, request.body.last_name, request.body.voter_unique_id, request.body.client_id_num);
-                accept = true;
+                accept = false;
+            } else if(is_pending) {
+                logger->warn("Warning: Another message received within the time period.");
+                accept = false;
             } else {
                 logger->debug("Rejecting client {}'s check-in request for {} {} {} (UID {}) because the voter has already checked in",
                               request.body.client_id_num, request.body.first_name, request.body.middle_name, request.body.last_name, request.body.voter_unique_id);
@@ -127,9 +149,10 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
         }
     }
 
+
     CheckinResponse::Body response_body(accept, request.body.client_id_num,
-                                        current_timestamp, request.body.last_name, request.body.first_name,
-                                        request.body.middle_name, request.body.voter_unique_id);
+                current_timestamp, request.body.last_name, request.body.first_name,
+                request.body.middle_name, request.body.voter_unique_id);
     // Sign the body of the response message with the service's key
     std::vector<std::uint8_t> response_body_bytes(mutils::bytes_size(response_body));
     mutils::to_bytes(response_body, response_body_bytes.data());

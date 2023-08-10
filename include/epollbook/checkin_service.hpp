@@ -37,6 +37,10 @@ private:
      * A "server socket" that listens for incoming connections from clients
      */
     asio::ip::tcp::acceptor connection_listener;
+    asio::steady_timer timer;
+    bool is_pending = false;
+    std::unique_ptr<CheckinRequest> pending_req;
+    asio::ip::tcp::endpoint pending_client_ip;
     /**
      * Maps a client IP address to a socket connected to that client
      */
