@@ -6,6 +6,7 @@ add_library(mutils-serialization OBJECT SerializationSupport.cpp)
 target_include_directories(mutils-serialization PRIVATE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
   $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>)
+target_link_libraries(mutils-serialization mutils::mutils)
 
 add_executable(serialization-test serialization-test.cpp)
 target_link_libraries(serialization-test mutils-serialization)

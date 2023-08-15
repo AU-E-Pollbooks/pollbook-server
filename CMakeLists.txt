@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.19)
 
 project(pollbook-server
     LANGUAGES CXX
@@ -18,7 +18,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # System library dependencies
-find_package(spdlog 1.3.1 REQUIRED)
+# Note: spdlog 1.10 introduced a breaking change that is not backward-compatible (due to fmt 8.1 introducing a breaking change)
+find_package(spdlog 1.3.1...1.9.2 REQUIRED)
 find_package(OpenSSL 1.1.1 REQUIRED)
 find_path(ASIO_PATH asio.hpp) # Since ASIO doesn't export a CMake target, we have to find it manually
 if(ASIO_PATH STREQUAL "ASIO_PATH-NOTFOUND")
@@ -26,13 +27,7 @@ if(ASIO_PATH STREQUAL "ASIO_PATH-NOTFOUND")
 endif()
 include_directories(${ASIO_PATH})
 # mutils library, which is required for mutils-serialization
-find_package(mutils)
-if (NOT ${mutils_FOUND})
-    message(FATAL_ERROR "mutils not found. Please install from https://github.com/mpmilano/mutils.git")
-else()
-    message(STATUS "Found mutils in: ${mutils_INCLUDE_DIRS}")
-    include_directories(${mutils_INCLUDE_DIRS})
-endif()
+find_package(mutils REQUIRED)
 
 # Process CMakeLists from each source-code directory
 add_subdirectory(src/config)
