@@ -1,6 +1,5 @@
 #pragma once
 
-#include "mutils-serialization/SerializationSupport.hpp"
 #include "openssl/base64.hpp"
 #include <nlohmann/json.hpp>
 
@@ -13,13 +12,13 @@ namespace epollbook {
  * A message to be sent over the network from a pollbook client to the Voter ID
  * service when it requests verification of a voter's ID.
  */
-struct VoterIDRequest : public mutils::ByteRepresentable {
+struct VoterIDRequest {
     /**
      * This inner struct defines the "body" fields of the request message,
      * which is everything except the signature. The outer struct contains
      * one Body instance and the signature.
      */
-    struct Body : public mutils::ByteRepresentable {
+    struct Body {
         /**
          * A unique number identifying the client in this system. This is used (for
          * now) instead of a hostname or IP address to match clients to public keys.
@@ -44,7 +43,14 @@ struct VoterIDRequest : public mutils::ByteRepresentable {
                   timestamp(timestamp),
                   voter_id_data(voter_id_data) {}
 
-        DEFAULT_SERIALIZATION_SUPPORT(Body, client_id_num, timestamp, voter_id_data);
+        static nlohmann::json ToJson(const VoterIDRequest::Body& body) {
+            nlohmann::json json;
+            std::string voter_id_str = Base64::encode(body.voter_id_data.data(), body.voter_id_data.size());
+            json["client_id_num"] = body.client_id_num;
+            json["timestamp"] = body.timestamp;
+            json["voter_id_data"] = voter_id_str;
+            return json;
+        } 
     };
 
     Body body;
@@ -59,14 +65,10 @@ struct VoterIDRequest : public mutils::ByteRepresentable {
             : body(message_body),
               client_signature(client_signature) {}
 
-    DEFAULT_SERIALIZATION_SUPPORT(VoterIDRequest, body, client_signature);
     static nlohmann::json ToJson(const VoterIDRequest& request) {
         nlohmann::json json;
         std::string signature_base64 = Base64::encode(request.client_signature.data(), request.client_signature.size());
-        std::string voter_id_str = Base64::encode(request.body.voter_id_data.data(), request.body.voter_id_data.size());
-        json["body"]["client_id_num"] = request.body.client_id_num;
-        json["body"]["timestamp"] = request.body.timestamp;
-        json["body"]["voter_id_data"] = voter_id_str;
+        json["body"] = VoterIDRequest::Body::ToJson(request.body);
         json["client_signature"] = signature_base64;
         return json;
     } 
@@ -94,7 +96,7 @@ struct VoterIDRequest : public mutils::ByteRepresentable {
  * from the ID service, which attests that the service has verified the ID
  * document and matched it to a specific voter known to the pollbook system.
  */
-struct VerifiedVoterID : public mutils::ByteRepresentable {
+struct VerifiedVoterID {
     /**
      * The voter ID presented by a client, i.e. the voter ID data together
      * with the client's ID, timestamp, and signature. This is just a copy
@@ -121,7 +123,6 @@ struct VerifiedVoterID : public mutils::ByteRepresentable {
               voter_unique_id(voter_uid),
               id_service_signature(id_service_signature) {}
 
-    DEFAULT_SERIALIZATION_SUPPORT(VerifiedVoterID, presented_id, voter_unique_id, id_service_signature);
     static nlohmann::json ToJson(const VerifiedVoterID& ID) {
         nlohmann::json json;
         std::string signature_base64 = Base64::encode(ID.id_service_signature.data(), ID.id_service_signature.size());

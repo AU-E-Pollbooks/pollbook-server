@@ -3,6 +3,7 @@
 #include <openssl/buffer.h>
 #include <string>
 #include <cstring>
+#include <vector>
 
 
 #ifndef BASE64_H

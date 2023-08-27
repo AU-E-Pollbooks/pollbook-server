@@ -1,13 +1,12 @@
 #pragma once
 
-#include "mutils-serialization/SerializationSupport.hpp"
 #include "voter_id_request.hpp"
 #include <nlohmann/json.hpp>
-#include "openssl/base64.hpp"
 
 #include <cstdint>
 #include <string>
 #include <vector>
+#include "openssl/base64.hpp"
 
 namespace epollbook {
 
@@ -15,13 +14,13 @@ namespace epollbook {
  * A message to be sent over the network from a pollbook client to the Check-in
  * Service when it makes a request to check in a particular voter.
  */
-struct CheckinRequest : public mutils::ByteRepresentable {
+struct CheckinRequest {
     /**
      * This inner struct defines the "body" fields of the request message,
      * which is everything except the signature. The outer struct contains
      * one Body instance and the signature.
      */
-    struct Body : public mutils::ByteRepresentable {
+    struct Body {
         /**
          * A unique number identifying the client in this system. This is used (for
          * now) instead of a hostname or IP address to match clients to public keys.
@@ -65,7 +64,20 @@ struct CheckinRequest : public mutils::ByteRepresentable {
                   middle_name(middle_name),
                   voter_unique_id(voter_unique_id),
                   verified_id_message(verified_id_message) {}
-        DEFAULT_SERIALIZATION_SUPPORT(Body, client_id_num, timestamp, last_name, first_name, middle_name, voter_unique_id, verified_id_message);
+
+        static nlohmann::json ToJson(const CheckinRequest::Body& body) {
+            nlohmann::json json;
+            /* std::string signature_base64 = Base64::encode(request.client_signature.data(), request.client_signature.size()); */
+            json["client_id_num"] = body.client_id_num;
+            json["timestamp"] = body.timestamp;
+            json["last_name"] = body.last_name;
+            json["first_name"] = body.first_name;
+            json["middle_name"] = body.middle_name;
+            json["voter_unique_id"] = body.voter_unique_id;
+            json["verified_id_message"] = VerifiedVoterID::ToJson(body.verified_id_message);
+            /* json["client_signature"] = signature_base64; */
+            return json;
+        }
     };
 
     Body body;
@@ -79,17 +91,11 @@ struct CheckinRequest : public mutils::ByteRepresentable {
             : body(message_body),
               client_signature(client_signature) {}
 
-    DEFAULT_SERIALIZATION_SUPPORT(CheckinRequest, body, client_signature);
+    /* DEFAULT_SERIALIZATION_SUPPORT(CheckinRequest, body, client_signature); */
     static nlohmann::json ToJson(const CheckinRequest& request) {
         nlohmann::json json;
+        json["body"] = CheckinRequest::Body::ToJson(request.body);
         std::string signature_base64 = Base64::encode(request.client_signature.data(), request.client_signature.size());
-        json["body"]["client_id_num"] = request.body.client_id_num;
-        json["body"]["timestamp"] = request.body.timestamp;
-        json["body"]["last_name"] = request.body.last_name;
-        json["body"]["first_name"] = request.body.first_name;
-        json["body"]["middle_name"] = request.body.middle_name;
-        json["body"]["voter_unique_id"] = request.body.voter_unique_id;
-        json["body"]["verified_id_message"] = VerifiedVoterID::ToJson(request.body.verified_id_message);
         json["client_signature"] = signature_base64;
         return json;
     }
@@ -114,8 +120,8 @@ struct CheckinRequest : public mutils::ByteRepresentable {
 /**
  * A message from the Check-in Service sent in response to a CheckinRequest message.
  */
-struct CheckinResponse : public mutils::ByteRepresentable {
-    struct Body : public mutils::ByteRepresentable {
+struct CheckinResponse {
+    struct Body {
         /**
          * True if the check-in request was approved, false if it was denied.
          */
@@ -156,7 +162,21 @@ struct CheckinResponse : public mutils::ByteRepresentable {
                   first_name(first_name),
                   middle_name(middle_name),
                   voter_unique_id(voter_unique_id) {}
-        DEFAULT_SERIALIZATION_SUPPORT(Body, approved, requesting_client_id, timestamp, last_name, first_name, middle_name, voter_unique_id);
+        /* DEFAULT_SERIALIZATION_SUPPORT(Body, approved, requesting_client_id, timestamp, last_name, first_name, middle_name, voter_unique_id); */
+
+        static nlohmann::json ToJson(const CheckinResponse::Body& body) {
+            nlohmann::json json;
+            /* std::string signature_base64 = Base64::encode(response.checkin_service_signature.data(), response.checkin_service_signature.size()); */
+            json["approved"] = body.approved;
+            json["requesting_client_id"] = body.requesting_client_id;
+            json["timestamp"] = body.timestamp;
+            json["last_name"] = body.last_name;
+            json["first_name"] = body.first_name;
+            json["middle_name"] = body.middle_name;
+            json["voter_unique_id"] = body.voter_unique_id;
+
+            return json;
+        }
     };
     Body body;
     /**
@@ -169,18 +189,11 @@ struct CheckinResponse : public mutils::ByteRepresentable {
             : body(message_body),
               checkin_service_signature(checkin_service_signature) {}
 
-    DEFAULT_SERIALIZATION_SUPPORT(CheckinResponse, body, checkin_service_signature);
     // Functions to convert json to a response and vice versa
     static nlohmann::json ToJson(const CheckinResponse& response) {
         nlohmann::json json;
         std::string signature_base64 = Base64::encode(response.checkin_service_signature.data(), response.checkin_service_signature.size());
-        json["body"]["approved"] = response.body.approved;
-        json["body"]["requesting_client_id"] = response.body.requesting_client_id;
-        json["body"]["timestamp"] = response.body.timestamp;
-        json["body"]["last_name"] = response.body.last_name;
-        json["body"]["first_name"] = response.body.first_name;
-        json["body"]["middle_name"] = response.body.middle_name;
-        json["body"]["voter_unique_id"] = response.body.voter_unique_id;
+        json["body"] = CheckinResponse::Body::ToJson(response.body);
         json["checkin_service_signature"] = signature_base64;
         return json;
     }

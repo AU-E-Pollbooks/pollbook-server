@@ -131,16 +131,18 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
                                         current_timestamp, request.body.last_name, request.body.first_name,
                                         request.body.middle_name, request.body.voter_unique_id);
     // Sign the body of the response message with the service's key
-    std::vector<std::uint8_t> response_body_bytes(mutils::bytes_size(response_body));
-    mutils::to_bytes(response_body, response_body_bytes.data());
+    std::string response_body_str = CheckinResponse::Body::ToJson(response_body).dump();
+
     signer.init();
-    signer.add_bytes(response_body_bytes.data(), response_body_bytes.size());
+    signer.add_bytes(response_body_str.data(), response_body_str.size());
     // Serialize and send the response message, including the signature
     CheckinResponse response(std::move(response_body), signer.finalize());
     
     // convert response into json and convert it into a string
+    logger->debug("Serializing response");
     nlohmann::json response_json = CheckinResponse::ToJson(response);
 
+    logger->debug("sending message");
     std::size_t response_size = response_json.size();
     std::string response_message_string = response_json.dump();
     std::string response_string = std::to_string(response_size) + "\n" + response_message_string +"\n";
@@ -153,11 +155,11 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
 
 bool CheckinService::validate_client_request(const CheckinRequest& request, std::uint64_t current_timestamp) {
     // Verify the client's signature on the message
-    std::vector<std::uint8_t> request_body_bytes(mutils::bytes_size(request.body));
-    mutils::to_bytes(request.body, request_body_bytes.data());
+    std::string request_body_str = CheckinRequest::Body::ToJson(request.body).dump();
+
     openssl::Verifier& verifier = client_verifiers.at(request.body.client_id_num);
     verifier.init();
-    verifier.add_bytes(request_body_bytes.data(), request_body_bytes.size());
+    verifier.add_bytes(request_body_str.data(), request_body_str.size());
 
     if(!verifier.finalize(request.client_signature)) {
         logger->debug("Rejecting client {}'s check-in request for {} {} {} (UID {}) because the client's signature on the message was invalid",
@@ -165,13 +167,13 @@ bool CheckinService::validate_client_request(const CheckinRequest& request, std:
         return false;
     }
     // If the client's signature was valid, verify the ID service's signature
-    std::size_t id_request_size = mutils::bytes_size(request.body.verified_id_message.presented_id);
-    std::size_t voter_uid_size = mutils::bytes_size(request.body.verified_id_message.voter_unique_id);
-    std::vector<std::uint8_t> id_message_bytes(id_request_size + voter_uid_size);
-    mutils::to_bytes(request.body.verified_id_message.presented_id, id_message_bytes.data());
-    mutils::to_bytes(request.body.verified_id_message.voter_unique_id, id_message_bytes.data() + id_request_size);
+    nlohmann::json voter_id_json;
+    voter_id_json["presented_id"] = VoterIDRequest::ToJson(request.body.verified_id_message.presented_id);
+    voter_id_json["voter_unique_id"] = request.body.verified_id_message.voter_unique_id;
+    std::string id_msg = voter_id_json.dump();
+
     id_service_verifier.init();
-    id_service_verifier.add_bytes(id_message_bytes.data(), id_message_bytes.size());
+    id_service_verifier.add_bytes(id_msg.data(), id_msg.size());
     if(!id_service_verifier.finalize(request.body.verified_id_message.id_service_signature)) {
         logger->debug("Rejecting client {}'s check-in request for {} {} {} (UID {}) because the signature on the ID verification was invalid",
                       request.body.client_id_num, request.body.first_name, request.body.middle_name, request.body.last_name, request.body.voter_unique_id);

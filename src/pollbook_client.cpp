@@ -64,105 +64,93 @@ void PollbookClient::start_id_request_write(std::uint64_t timestamp, const std::
     std::uint32_t my_id = Config::getUInt32(Config::SECTION_BASIC, Config::CLIENT_ID);
     VoterIDRequest::Body validation_request_body(my_id, timestamp, voter_id_data);
     // Sign the body of the message
-    std::vector<std::uint8_t> body_bytes(mutils::bytes_size(validation_request_body));
-    mutils::to_bytes(validation_request_body, body_bytes.data());
+    nlohmann::json body_json = VoterIDRequest::Body::ToJson(validation_request_body);
+    std::string body_string = body_json.dump();
     private_key_signer.init();
-    private_key_signer.add_bytes(body_bytes.data(), body_bytes.size());
-    
+    private_key_signer.add_bytes(body_string.data(), body_string.size());
+
     // Move the body into a full message, with the signature at the end
     VoterIDRequest validation_request(std::move(validation_request_body), private_key_signer.finalize()); 
 
     // Serialize and send the message
-    std::size_t message_size = mutils::bytes_size(validation_request);
-    std::vector<std::uint8_t> validation_request_buffer(message_size + sizeof(message_size));
-    mutils::to_bytes(message_size, validation_request_buffer.data());
-    mutils::to_bytes(validation_request, validation_request_buffer.data() + sizeof(message_size));
+    nlohmann::json validation_json = VoterIDRequest::ToJson(validation_request);
+    std::size_t message_size = validation_json.size();
+    std::string response_message_string = validation_json.dump();
+    std::string buf = std::to_string(message_size) + "\n" + response_message_string + "\n";
 
     asio::async_write(id_server_socket,
-                      asio::buffer(validation_request_buffer),
-                      [this](const asio::error_code& error, std::size_t bytes_written) {
-                          if(!error) {
-                              logger->debug("Sent {} bytes to id server", bytes_written);
-                              logger->debug("Sent a request to verify the voter's ID to the ID service.");
-                              // After sending the request, start waiting for the response, which will start with a "size" header
-                              start_size_read(true);
-                          } else {
-                              logger->error("Error writing the ID-verification request to the ID service! Error: {}", error.message());
-                              current_request_promise.set_value({false, "Network error: I/O error when sending a request to the Voter ID service"});
-                          }
-                      });
+        asio::buffer(buf),
+        [this](const asio::error_code& error, std::size_t bytes_written) {
+            if(!error) {
+                logger->debug("Sent {} bytes to id server", bytes_written);
+                logger->debug("Sent a request to verify the voter's ID to the ID service.");
+                // After sending the request, start waiting for the response, which will start with a "size" header
+                start_message_read(true);
+            } else {
+                logger->error("Error writing the ID-verification request to the ID service! Error: {}", error.message());
+                current_request_promise.set_value({false, "Network error: I/O error when sending a request to the Voter ID service"});
+            }
+        });
 }
 
-void PollbookClient::start_size_read(bool on_id_server) {
+void PollbookClient::start_message_read(bool on_id_server) {
     std::shared_ptr<std::size_t> message_size = std::make_shared<std::size_t>();
     auto buf = std::make_shared<asio::streambuf>();
+    auto msg = std::make_shared<std::string>();
     if(on_id_server) {
-        asio::async_read(id_server_socket,
-                         asio::buffer(&(*message_size), sizeof(std::size_t)),
-                         [this, message_size](const asio::error_code& error, std::size_t bytes_read) {
-                             if(!error) {
-                                 logger->debug("Read {} bytes from socket into a std::size_t", bytes_read);
-                                 assert(bytes_read == sizeof(std::size_t));
-                                 logger->debug("Message received from ID service, size {} bytes", *message_size);
-                                 start_id_response_read(*message_size);
-                             } else if(error == asio::error::eof || error == asio::error::connection_aborted) {
-                                 logger->error("ID service disconnected before sending message size");
-                                 current_request_promise.set_value({false, "Network error: Voter ID service disconnected"});
-                             } else {
-                                 logger->error("Unexpected error when reading message size from ID service: {}", error.message());
-                                 current_request_promise.set_value({false, "Network error: I/O error when reading from Voter ID service"});
-                             }
-                         });
+        asio::async_read_until(id_server_socket, *buf, "\n",
+        [this, msg, buf, message_size](const asio::error_code& error, std::size_t bytes_read) {
+            if (!error) {
+                logger->debug("Read {} bytes from socket into a std::size_t", bytes_read);
+                *msg = std::string(asio::buffer_cast<const char*>(buf->data()), bytes_read);
+                std::string json_string = *msg;
+                nlohmann::json response_json = nlohmann::json::parse(json_string);
+                VerifiedVoterID response = VerifiedVoterID::FromJson(response_json);
+                *message_size = json_string.size();
+                logger->debug("Message received from ID service, size {} bytes", *message_size);
+                buf->consume(bytes_read);
+                handle_id_response(response); 
+            } else if(error == asio::error::eof || error == asio::error::connection_aborted) {
+                logger->error("ID service disconnected before sending message size");
+                current_request_promise.set_value({false, "Network error: Voter ID service disconnected"});
+            } else {
+                logger->error("Unexpected error when reading message size from ID service: {}", error.message());
+                current_request_promise.set_value({false, "Network error: I/O error when reading from Voter ID service"});
+            }
+        });
     } else {
         asio::async_read_until(checkin_server_socket, *buf, "\n",
-                [this, buf, message_size](const asio::error_code& error, std::size_t bytes_read) {
-                    if (!error) {
-                        logger->debug("Read {} bytes from socket into a std::size_t", bytes_read);
-                        std::string full_buffer = std::string(asio::buffer_cast<const char*>(buf->data()), bytes_read);
-                        std::stringstream ss(full_buffer);
-                        ss >> *message_size;
-                        buf->consume(bytes_read);
-                        logger->debug("Message received from checkin service, size {} bytes", *message_size);
-                        start_checkin_response_read(*message_size, buf);
-                    } else if(error == asio::error::eof || error == asio::error::connection_aborted) {
-                        logger->error("Checkin service disconnected before sending message size");
-                        current_request_promise.set_value({false, "Network error: Checkin service disconnected"});
-                    } else {
-                        logger->error("Unexpected error when reading message size from checkin service: {}", error.message());
-                        current_request_promise.set_value({false, "Network error: I/O error when reading from the checkin service"});
-                    }
-
-                });
+        [this, buf, message_size](const asio::error_code& error, std::size_t bytes_read) {
+            if (!error) {
+                logger->debug("Read {} bytes from socket into a std::size_t", bytes_read);
+                std::string full_buffer = std::string(asio::buffer_cast<const char*>(buf->data()), bytes_read);
+                std::stringstream ss(full_buffer);
+                ss >> *message_size;
+                buf->consume(bytes_read);
+                logger->debug("Message received from checkin service, size {} bytes", *message_size);
+                start_checkin_response_read(*message_size, buf);
+            } else if(error == asio::error::eof || error == asio::error::connection_aborted) {
+                logger->error("Checkin service disconnected before sending message size");
+                current_request_promise.set_value({false, "Network error: Checkin service disconnected"});
+            } else {
+                logger->error("Unexpected error when reading message size from checkin service: {}", error.message());
+                current_request_promise.set_value({false, "Network error: I/O error when reading from the checkin service"});
+            }
+        });
     }
-}
-
-void PollbookClient::start_id_response_read(std::size_t message_size) {
-    id_server_buffer.resize(message_size);
-    asio::async_read(id_server_socket,
-                     asio::buffer(id_server_buffer),
-                     [this](const asio::error_code& error, std::size_t bytes_read) {
-                         if(!error) {
-                             assert(bytes_read == id_server_buffer.size());
-                             auto response = mutils::from_bytes<VerifiedVoterID>(nullptr, id_server_buffer.data());
-                             handle_id_response(*response);
-                         } else if(error == asio::error::eof || error == asio::error::connection_aborted) {
-                             logger->error("ID service disconnected before sending entire response message");
-                             current_request_promise.set_value({false, "Network error: Voter ID service disconnected"});
-                         } else {
-                             logger->error("Unexpected error when reading VerifiedVoterID from ID service: {}", error.message());
-                             current_request_promise.set_value({false, "Network error: I/O error when reading from the Voter ID service"});
-                         }
-                     });
 }
 
 void PollbookClient::handle_id_response(const VerifiedVoterID& response) {
     // Verify the signature, then asynchronously schedule a write for the check-in request
-    std::size_t request_size = mutils::bytes_size(response.presented_id);
-    std::vector<std::uint8_t> response_body_bytes(request_size + mutils::bytes_size(response.voter_unique_id));
-    mutils::to_bytes(response.presented_id, response_body_bytes.data());
-    mutils::to_bytes(response.voter_unique_id, response_body_bytes.data() + request_size);
+    nlohmann::json response_json;
+    response_json["presented_id"] = VoterIDRequest::ToJson(response.presented_id);
+    response_json["voter_unique_id"] = response.voter_unique_id;
+
+    std::string response_str = response_json.dump();
+
     id_service_verifier.init();
-    id_service_verifier.add_bytes(response_body_bytes.data(), response_body_bytes.size());
+    id_service_verifier.add_bytes(response_str.data(), response_str.size());
+    /* id_service_verifier.add_bytes(&response.voter_unique_id, sizeof(response.voter_unique_id)); */
     bool verified = id_service_verifier.finalize(response.id_service_signature);
     if(verified) {
         start_checkin_request_write(response);
@@ -182,10 +170,9 @@ void PollbookClient::start_checkin_request_write(const VerifiedVoterID& verified
                                       std::get<0>(current_request_voter_name), std::get<1>(current_request_voter_name),
                                       verified_id_response.voter_unique_id, verified_id_response);
     // Serialize the body of the message and sign the bytes
-    std::vector<std::uint8_t> request_body_bytes(mutils::bytes_size(request_body));
-    mutils::to_bytes(request_body, request_body_bytes.data());
+    std::string request_body_str = CheckinRequest::Body::ToJson(request_body).dump();
     private_key_signer.init();
-    private_key_signer.add_bytes(request_body_bytes.data(), request_body_bytes.size());
+    private_key_signer.add_bytes(request_body_str.data(), request_body_str.size());
     // Construct the message, with the signature at the end
     CheckinRequest request(std::move(request_body), private_key_signer.finalize());
 
@@ -200,7 +187,7 @@ void PollbookClient::start_checkin_request_write(const VerifiedVoterID& verified
                       [this](const asio::error_code& error, std::size_t bytes_written) {
                           if(!error) {
                               logger->debug("Sent a check-in request for voter {} {} {} to check-in service.", std::get<0>(current_request_voter_name), std::get<1>(current_request_voter_name), std::get<2>(current_request_voter_name));
-                              start_size_read(false);
+                              start_message_read(false);
                           } else {
                               logger->error("Error writing the ID-verification request to the ID service! Error: {}", error.message());
                               current_request_promise.set_value({false, "Network error: I/O error when sending a request to the check-in service"});
@@ -233,10 +220,9 @@ void PollbookClient::start_checkin_response_read(std::size_t message_size, std::
 
 void PollbookClient::handle_checkin_response(const CheckinResponse& response) {
     // Serialize the body of the response to verify the signature
-    std::vector<std::uint8_t> response_body_bytes(mutils::bytes_size(response.body));
-    mutils::to_bytes(response.body, response_body_bytes.data());
+    std::string response_body_str = CheckinResponse::Body::ToJson(response.body).dump();
     checkin_service_verifier.init();
-    checkin_service_verifier.add_bytes(response_body_bytes.data(), response_body_bytes.size());
+    checkin_service_verifier.add_bytes(response_body_str.data(), response_body_str.size());
     bool verified = checkin_service_verifier.finalize(response.checkin_service_signature);
     if(!verified) {
         current_request_promise.set_value({false, "Invalid signature on check-in service's response. OpenSSL error: " +

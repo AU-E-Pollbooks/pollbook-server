@@ -109,9 +109,7 @@ public:
 
     /* --- Various asynchronous I/O event handlers for receiving messages from the servers --- */
 
-    void start_size_read(bool on_id_server);
-
-    void start_id_response_read(std::size_t message_size);
+    void start_message_read(bool on_id_server);
 
     void handle_id_response(const VerifiedVoterID& response);
 

@@ -81,18 +81,10 @@ private:
 
     /**
      * Starts an asynchronous read on the socket for the specified client
-     * that will attempt to read sizeof(std::size_t) bytes. This is the size
-     * of the remaining message, and needs to be read first to determine the
-     * size of the buffer to allocate.
+     * that will attempt to read sizeof(std::size_t) bytes and then read
+     * the specified number of bytes. 
      */
-    void start_size_read(asio::ip::tcp::endpoint client_ip);
-
-    /**
-     * Starts an asynchronous read on the socket for the specified client,
-     * which will read the specified number of bytes. Assumes the server has
-     * already read the initial 4 bytes to determine the size of the message.
-     */
-    void start_payload_read(const asio::ip::tcp::endpoint& client_ip, std::size_t size_of_message);
+    void start_message_read(asio::ip::tcp::endpoint client_ip);
 
     /**
      * Handles a single ID-validation request from a client, assuming it has already
