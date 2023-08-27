@@ -14,6 +14,7 @@ target_include_directories(epollbook PUBLIC
 
 # Specify library dependencies for this target
 target_link_libraries(epollbook
+    mutils::mutils
     OpenSSL::Crypto
     spdlog::spdlog
     nlohmann_json::nlohmann_json)
@@ -38,15 +39,15 @@ set(ConfigPackageLocation ${CMAKE_INSTALL_LIBDIR}/cmake/epollbook)
 # Use CMakePackageConfigHelpers to create a package version file and config file
 include(CMakePackageConfigHelpers)
 write_basic_package_version_file(
-    "${CMAKE_CURRENT_BINARY_DIR}/epollbook/epollbookConfigVersion.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/cmake/epollbookConfigVersion.cmake"
     VERSION ${pollbook-server_VERSION}
     COMPATIBILITY AnyNewerVersion
 )
 
 configure_package_config_file(${PROJECT_SOURCE_DIR}/cmake/epollbookConfig.cmake.in
-    "${CMAKE_CURRENT_BINARY_DIR}/epollbook/epollbookConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/cmake/epollbookConfig.cmake"
     INSTALL_DESTINATION ${ConfigPackageLocation}
-    PATH_VARS CMAKE_INSTALL_LIBDIR CMAKE_INSTALL_INCLUDEDIR ConfigPackageLocation
+    PATH_VARS CMAKE_INSTALL_LIBDIR CMAKE_INSTALL_INCLUDEDIR
 )
 
 # Create a CMake "export file" for this library, to allow it to be imported as a dependency
