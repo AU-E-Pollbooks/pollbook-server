@@ -56,10 +56,9 @@ private:
      */
     std::map<asio::ip::tcp::endpoint, asio::ip::tcp::socket> client_sockets;
     /**
-     * Maps a client IP address to a byte buffer currently being used to
-     * receive a message from that client.
+     * Stream buffer that is used for reading client size and message
      */
-    std::map<asio::ip::tcp::endpoint, std::vector<uint8_t>> client_receive_buffers;
+    std::shared_ptr<asio::streambuf> client_buffer = std::make_shared<asio::streambuf>();
     /**
      * The Signer object the server uses to sign messages, which is configured
      * with the service's signing key.
@@ -78,13 +77,20 @@ private:
      * Starts an asynchronous accept request on the connection listener.
      */
     void do_accept();
-
     /**
      * Starts an asynchronous read on the socket for the specified client
-     * that will attempt to read sizeof(std::size_t) bytes and then read
-     * the specified number of bytes. 
+     * that will attempt to read sizeof(std::size_t) bytes. This is the size
+     * of the remaining message, and needs to be read first to determine the
+     * size of the buffer to allocate.
      */
-    void start_message_read(asio::ip::tcp::endpoint client_ip);
+    void start_size_read(asio::ip::tcp::endpoint client_ip);
+
+    /**
+     * Starts an asynchronous read on the socket for the specified client,
+     * which will read the specified number of bytes. Assumes the server has
+     * already read the initial 4 bytes to determine the size of the message.
+     */
+    void start_payload_read(asio::ip::tcp::endpoint client_ip, std::size_t size_of_message);
 
     /**
      * Handles a single ID-validation request from a client, assuming it has already

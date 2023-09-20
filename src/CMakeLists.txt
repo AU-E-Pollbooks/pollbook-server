@@ -5,8 +5,7 @@ add_library(epollbook
     log_utils.cpp
     voter_id_service.cpp
     $<TARGET_OBJECTS:config>
-    $<TARGET_OBJECTS:openssl_wrapper>
-    $<TARGET_OBJECTS:mutils-serialization>)
+    $<TARGET_OBJECTS:openssl_wrapper>)
 
 # Specify that the epollbook target needs the include directory in this project when building
 target_include_directories(epollbook PUBLIC
@@ -14,7 +13,6 @@ target_include_directories(epollbook PUBLIC
 
 # Specify library dependencies for this target
 target_link_libraries(epollbook
-    mutils::mutils
     OpenSSL::Crypto
     spdlog::spdlog
     nlohmann_json::nlohmann_json)

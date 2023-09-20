@@ -74,8 +74,8 @@ void PollbookClient::start_id_request_write(std::uint64_t timestamp, const std::
 
     // Serialize and send the message
     nlohmann::json validation_json = VoterIDRequest::ToJson(validation_request);
-    std::size_t message_size = validation_json.size();
     std::string response_message_string = validation_json.dump();
+    std::size_t message_size = response_message_string.size();
     std::string buf = std::to_string(message_size) + "\n" + response_message_string + "\n";
 
     asio::async_write(id_server_socket,
