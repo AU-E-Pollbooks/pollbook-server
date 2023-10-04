@@ -27,7 +27,6 @@ CheckinService::CheckinService()
 }
 
 CheckinService::~CheckinService() {
-    this->client_buffer.reset();
     network_io_context.stop();
     if (network_thread.joinable()) {
         network_thread.join();
@@ -53,18 +52,31 @@ void CheckinService::handle_accept(const asio::error_code& error, asio::ip::tcp:
 }
 
 void CheckinService::start_size_read(asio::ip::tcp::endpoint client_ip) {
+    // Creating shared pointers to hold message size and message content.
     auto message_size = std::make_shared<std::size_t>();
     auto msg = std::make_shared<std::string>();
     std::shared_ptr<std::string> msg_size_str = std::make_shared<std::string>();
-    asio::async_read_until(client_sockets.at(client_ip), *client_buffer, "\n", 
+
+    // Initialize a new buffer for this client if not already present.
+    if (client_buffers.find(client_ip) == client_buffers.end()) {
+        client_buffers[client_ip] = std::make_shared<asio::streambuf>();
+    }
+    // Asynchronous read until a newline character to get the message size.
+    asio::async_read_until(client_sockets.at(client_ip), *client_buffers[client_ip], "\n", 
         [this, client_ip, message_size, msg_size_str, msg](const asio::error_code& error, std::size_t bytes_read) {
             if (!error) {
-                *msg_size_str = std::string(asio::buffer_cast<const char*>(this->client_buffer->data()), bytes_read);
+                // Successfully read the message size.
+                *msg_size_str = std::string(asio::buffer_cast<const char*>(this->client_buffers[client_ip]->data()), bytes_read);
                 *message_size = std::stoul(*msg_size_str);
                 logger->debug("Client at {}: Message size is {} bytes", client_ip, *message_size);
-                client_buffer->consume(bytes_read);
+
+                // Consume the bytes that were read.
+                this->client_buffers[client_ip]->consume(bytes_read);
+
+                // Start reading the payload now that we know its size.
                 start_payload_read(client_ip, *message_size);
             } else if(error == asio::error::eof || error == asio::error::connection_aborted) {
+                // Client disconnected before sending the message size.
                 logger->debug("Client at {} disconnected before sending message size", client_ip);
                 client_sockets.erase(client_ip);
             }
@@ -72,33 +84,46 @@ void CheckinService::start_size_read(asio::ip::tcp::endpoint client_ip) {
 }
 
 void CheckinService::start_payload_read(asio::ip::tcp::endpoint client_ip, std::size_t size_of_message) {
+    // Creating a shared pointer to hold the message content.
     auto msg = std::make_shared<std::string>();
-    asio::async_read_until(client_sockets.at(client_ip), *client_buffer, "\n",
+
+    // Initialize a new buffer for this client if not already present.
+    if (client_buffers.find(client_ip) == client_buffers.end()) {
+        client_buffers[client_ip] = std::make_shared<asio::streambuf>();
+    }
+    // Asynchronous read until a newline character to get the payload.
+    asio::async_read_until(client_sockets.at(client_ip), *client_buffers[client_ip], "\n",
             [this, client_ip, size_of_message, msg](const asio::error_code& error, std::size_t bytes_read) {
                 if (!error) {
+                    // Successfully read the payload.
                     if (size_of_message == bytes_read - 1) {
-                        *msg = std::string(asio::buffer_cast<const char*>(this->client_buffer->data()), bytes_read);
+                        *msg = std::string(asio::buffer_cast<const char*>(this->client_buffers[client_ip]->data()), bytes_read);
                         std::string json_string = *msg;
-                        client_buffer->consume(bytes_read);
+
+                        // Consume the bytes that were read.
+                        client_buffers[client_ip]->consume(bytes_read);
 
                         logger->debug("Finished reading message of size {} from client at {}", bytes_read, client_ip);
-                        // Converting the string into json
+                        // Parse the JSON payload.
                         try {
                             nlohmann::json json = nlohmann::json::parse(json_string);
                             CheckinRequest request = CheckinRequest::FromJson(json);
-
                             handle_checkin_request(client_ip, request);
                         } catch(const nlohmann::json::parse_error& e) {
+                            // Failed to parse the JSON payload.
                             logger->debug("Failed to parse JSON: {}", e.what());
                         }
                     } else {
+                        // Message size mismatch.
                         logger->warn("Size of the message does not match the size that is received from the server for the client {}", client_ip);
                         client_sockets.erase(client_ip);
                     }
                 } else if(error == asio::error::eof || error == asio::error::connection_aborted) {
+                    // Client disconnected before sending the entire message.
                     logger->debug("Client at {} disconnected before sending entire message", client_ip);
                     client_sockets.erase(client_ip);
                 } else {
+                    // Unexpected I/O error.
                     logger->warn("Unexpected I/O error when reading a request message from client {}. Error: {}", client_ip, error.message());
                 }
     });

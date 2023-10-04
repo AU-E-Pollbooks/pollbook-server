@@ -41,13 +41,16 @@ void VoterIDService::handle_accept(const asio::error_code& error, asio::ip::tcp:
 void VoterIDService::start_size_read(asio::ip::tcp::endpoint client_ip) {
     std::shared_ptr<std::size_t> message_size = std::make_shared<std::size_t>();
     auto msg_size_str = std::make_shared<std::string>();
-    asio::async_read_until(client_sockets.at(client_ip), *client_buffer, "\n",
+    if (client_buffers.find(client_ip) == client_buffers.end()) {
+        client_buffers[client_ip] = std::make_shared<asio::streambuf>();
+    }
+    asio::async_read_until(client_sockets.at(client_ip), *client_buffers[client_ip], "\n",
     [this, client_ip, message_size, msg_size_str](const asio::error_code& error, std::size_t bytes_read) {
         if(!error) {
-            *msg_size_str = std::string(asio::buffer_cast<const char*>(this->client_buffer->data()), bytes_read);
+            *msg_size_str = std::string(asio::buffer_cast<const char*>(this->client_buffers[client_ip]->data()), bytes_read);
             *message_size = std::stoul(*msg_size_str);
             logger->debug("Client at {}: Message size is {} bytes", client_ip, *message_size); 
-            client_buffer->consume(bytes_read);
+            client_buffers[client_ip]->consume(bytes_read);
             start_payload_read(client_ip, *message_size);
         } else if(error == asio::error::eof || error == asio::error::connection_aborted) {
             logger->debug("Client at {} disconnected before sending message size", client_ip);
@@ -58,21 +61,22 @@ void VoterIDService::start_size_read(asio::ip::tcp::endpoint client_ip) {
 
 void VoterIDService::start_payload_read(asio::ip::tcp::endpoint client_ip, std::size_t size_of_message) {
     auto msg = std::make_shared<std::string>();
-    asio::async_read_until(client_sockets.at(client_ip), *client_buffer, "\n", 
+    if (client_buffers.find(client_ip) == client_buffers.end()) {
+        client_buffers[client_ip] = std::make_shared<asio::streambuf>();
+    }
+    asio::async_read_until(client_sockets.at(client_ip), *client_buffers[client_ip], "\n", 
     [this, msg, client_ip, size_of_message](const asio::error_code& error, std::size_t bytes_read) {
         if(!error) {
             if(size_of_message == bytes_read - 1) {
-                *msg = std::string(asio::buffer_cast<const char*>(this->client_buffer->data()), bytes_read);
+                *msg = std::string(asio::buffer_cast<const char*>(this->client_buffers[client_ip]->data()), bytes_read);
                 std::string json_string = *msg;
-                client_buffer->consume(bytes_read);
+                client_buffers[client_ip]->consume(bytes_read);
                 logger->debug("Finished reading message of size {} from client at {}", bytes_read, client_ip);
 
                 nlohmann::json json = nlohmann::json::parse(json_string);
                 VoterIDRequest request = VoterIDRequest::FromJson(json);
                 handle_validation_request(client_ip, request);
             } else {
-                std::cout << bytes_read << std::endl;
-                std::cout << size_of_message << std::endl;
                 logger->warn("Size of the message does not match the size that is received from the server for the client {}", client_ip);
                 client_sockets.erase(client_ip);
             }

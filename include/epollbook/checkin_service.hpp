@@ -45,8 +45,8 @@ private:
      * Maps a client IP address to a byte buffer currently being used to
      * receive a message from that client.
      */
-    /* std::map<asio::ip::tcp::endpoint, std::vector<uint8_t>> client_receive_buffers; */
-    std::shared_ptr<asio::streambuf> client_buffer = std::make_shared<asio::streambuf>();
+    std::map<asio::ip::tcp::endpoint, std::shared_ptr<asio::streambuf>> client_buffers;
+    /* std::shared_ptr<asio::streambuf> client_buffer = std::make_shared<asio::streambuf>(); */
     /**
      * Maps a client's unique ID to a Verifier initialized with that client's
      * public key.

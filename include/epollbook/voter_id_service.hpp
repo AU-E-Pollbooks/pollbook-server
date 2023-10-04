@@ -58,7 +58,8 @@ private:
     /**
      * Stream buffer that is used for reading client size and message
      */
-    std::shared_ptr<asio::streambuf> client_buffer = std::make_shared<asio::streambuf>();
+    std::map<asio::ip::tcp::endpoint, std::shared_ptr<asio::streambuf>> client_buffers;
+    /* std::shared_ptr<asio::streambuf> client_buffer = std::make_shared<asio::streambuf>(); */
     /**
      * The Signer object the server uses to sign messages, which is configured
      * with the service's signing key.
