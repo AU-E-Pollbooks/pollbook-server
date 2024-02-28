@@ -16,6 +16,7 @@ This is a CMake C++ project adhering to the C++17 standard, so it requires a rec
 * [spdlog](https://github.com/gabime/spdlog) for logging (packaged for Debian-like systems as `libspdlog-dev`)
 * [ASIO](https://think-async.com/asio), the non-Boost standalone version, for platform-independent network sockets
 * [mutils](https://github.com/mpmilano/mutils), a C++ template utility library by [@mpmilano](https://github.com/mpmilano)
+* [nlohmann](https://github.com/nlohmann/json), for json serialised communication between the client and the server. 
 
 Once these dependencies are installed, and available in an include path that CMake can find, you should be able to build this library using the standard CMake incantations:
 
