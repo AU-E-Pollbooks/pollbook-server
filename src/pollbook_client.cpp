@@ -5,6 +5,7 @@
 #include "epollbook/voter_id_request.hpp"
 
 #include <asio.hpp>
+#include <asio/ssl.hpp>
 
 #include <chrono>
 #include <cstdint>
@@ -17,8 +18,9 @@ namespace epollbook {
 PollbookClient::PollbookClient()
         : logger(spdlog::get(LogUtils::get_default_logger_name())),
           network_work_guard(network_io_context.get_executor()),
+          ssl_context_id(asio::ssl::context::tlsv12_server),
           checkin_server_socket(network_io_context),
-          id_server_socket(network_io_context),
+          id_server_socket(network_io_context, ssl_context_id),
           checkin_connected(false),
           id_connected(false),
           private_key_signer(openssl::EnvelopeKey::from_pem_private(
@@ -30,7 +32,12 @@ PollbookClient::PollbookClient()
           checkin_service_verifier(openssl::EnvelopeKey::from_pem_public(
                                        Config::getString(Config::SECTION_SECURITY, Config::CHECKIN_SERVICE_PUBLIC_KEY)),
                                    openssl::DigestAlgorithm::SHA256),
-          network_thread([this]() { network_io_context.run(); }) {}
+          network_thread([this]() { network_io_context.run(); }) {
+              configure_ssl_context(ssl_context_id, 
+                    "/pollbook-server/build/apps/local-test-deployment/client0/cert.pem",
+                    "/pollbook-server/build/apps/local-test-deployment/client0/client.key",
+                    "/pollbook-server/build/apps/local-test-deployment/client0/ca/ca.pem");
+          }
 
 PollbookClient::~PollbookClient() {
     // Shut down the IO context so the network thread can return
@@ -46,6 +53,21 @@ void PollbookClient::connect() {
     logger->info("Client connected to both check-in and ID services");
 }
 
+void PollbookClient::configure_ssl_context(asio::ssl::context& ssl_context, 
+                           const std::string& cert_file, 
+                           const std::string& key_file, 
+                           const std::string& ca_file) {
+    ssl_context.use_certificate_chain_file(cert_file);
+    ssl_context.use_private_key_file(key_file, asio::ssl::context::pem);
+    ssl_context.load_verify_file(ca_file);
+    ssl_context.set_verify_mode(asio::ssl::verify_peer);
+    ssl_context.set_verify_callback(
+        [](bool preverified, asio::ssl::verify_context& ctx) -> bool {
+            // Here, you can implement additional verification logic if necessary
+            return preverified;
+        });
+}
+
 void PollbookClient::connect_checkin_server(const std::string& hostname, const std::string& port) {
     asio::ip::tcp::resolver server_resolver(network_io_context);
     auto resolve_results = server_resolver.resolve(hostname, port);
@@ -54,10 +76,32 @@ void PollbookClient::connect_checkin_server(const std::string& hostname, const s
 }
 
 void PollbookClient::connect_id_server(const std::string& hostname, const std::string& port) {
-    asio::ip::tcp::resolver server_resolver(network_io_context);
-    auto resolve_results = server_resolver.resolve(hostname, port);
-    asio::connect(id_server_socket, resolve_results);
+/* void PollbookClient::connect_id_server(asio::ssl::stream<asio::ip::tcp::socket>& ssl_socket, const std::string& port) { */
+    /* asio::ip::tcp::resolver server_resolver(network_io_context); */
+    /* auto resolve_results = server_resolver.resolve(hostname, port); */
+    PollbookClient::make_handshake(hostname, port);
+    /* asio::connect(id_server_socket, resolve_results); */
+    /* asio::ip::tcp::resolver resolver(id_server_socket.get_io_context()); */
+    /* auto endpoints = resolver.resolve(host, service); */
+    
+    /* // Attempt to connect to an endpoint */
+    /* asio::connect(ssl_socket.lowest_layer(), endpoints); */
+    
+    /* // Perform the SSL handshake */
+    /* ssl_socket.handshake(asio::ssl::stream_base::client); */
     id_connected = true;
+}
+
+void PollbookClient::make_handshake(const std::string& host, const std::string& port) {
+    // Resolve the host and service to a list of endpoints
+    asio::ip::tcp::resolver resolver(network_io_context);
+    auto endpoints = resolver.resolve(host, port);
+    
+    // Attempt to connect to an endpoint
+    asio::connect(id_server_socket.lowest_layer(), endpoints);
+    
+    // Perform the SSL handshake
+    id_server_socket.handshake(asio::ssl::stream_base::client);
 }
 
 void PollbookClient::start_id_request_write(std::uint64_t timestamp, const std::vector<std::uint8_t>& voter_id_data) {

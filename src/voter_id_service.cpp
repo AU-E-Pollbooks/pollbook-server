@@ -4,6 +4,7 @@
 
 #include <spdlog/fmt/ostr.h>
 #include <asio.hpp>
+#include <asio/ssl.hpp>
 
 #include <array>
 #include <chrono>
@@ -14,28 +15,70 @@ namespace epollbook {
 
 VoterIDService::VoterIDService()
         : logger(spdlog::get(LogUtils::get_default_logger_name())),
-          connection_listener(network_io_context,
-                              asio::ip::tcp::endpoint(asio::ip::tcp::tcp::v4(),
-                                                      Config::getUInt16(Config::SECTION_BASIC, Config::ID_SERVICE_PORT))),
+          ssl_context(asio::ssl::context::tlsv12_server),
+          connection_listener(
+                  network_io_context,
+                  asio::ip::tcp::endpoint(
+                      asio::ip::tcp::tcp::v4(), 
+                      Config::getUInt16(Config::SECTION_BASIC, Config::ID_SERVICE_PORT))),
           signer(openssl::EnvelopeKey::from_pem_private(Config::getString(Config::SECTION_SECURITY, Config::LOCAL_PRIVATE_KEY)),
-                 signature_digest_algorithm) {}
+                 signature_digest_algorithm) {
+          configure_ssl_context(ssl_context,
+                      "/pollbook-server/build/apps/local-test-deployment/server0/cert.pem",
+                      "/pollbook-server/build/apps/local-test-deployment/server0/server.key", 
+                      "/pollbook-server/build/apps/local-test-deployment/server0/ca/ca.pem");
+}
 
 void VoterIDService::do_accept() {
-    connection_listener.async_accept(network_io_context,
-                                     [this](const asio::error_code& error, asio::ip::tcp::socket peer) {
-                                         handle_accept(error, std::move(peer));
-                                     });
+    connection_listener.async_accept(
+            network_io_context,
+            [this](const asio::error_code& error, asio::ip::tcp::socket peer) {
+                handle_accept(error, std::move(peer));
+            });
 }
 
 void VoterIDService::handle_accept(const asio::error_code& error, asio::ip::tcp::socket new_socket) {
-    asio::ip::tcp::endpoint client_ip = new_socket.remote_endpoint();
-    logger->debug("Accepted a connection from client at {}", client_ip);
-    // Put the new socket in the map
-    client_sockets.emplace(client_ip, std::move(new_socket));
-    // Start a read for the message size
-    start_size_read(client_ip);
-    // Enqueue another accept operation for the connection listener so it keeps listening
-    do_accept();
+    if (!error) {
+        /* auto ssl_stream = std::make_shared<asio::ssl::stream<asio::ip::tcp::socket>>(std::move(new_socket), ssl_context); */
+        auto ssl_stream_ptr = std::make_shared<asio::ssl::stream<asio::ip::tcp::socket>>(std::move(new_socket), ssl_context);
+        auto client_endpoint = ssl_stream_ptr->lowest_layer().remote_endpoint();
+
+        ssl_stream_ptr->async_handshake(asio::ssl::stream_base::server,
+            [this, ssl_stream_ptr, client_endpoint](const asio::error_code& handshake_error) {
+                if (!handshake_error) {
+                    // The handshake was successful
+                    // You can now read or write to the socket
+                    /* asio::ip::tcp::endpoint client_ip = new_socket.remote_endpoint(); */
+                    auto client_ip = ssl_stream_ptr->lowest_layer().remote_endpoint();
+                    client_ssl_streams[client_endpoint] = ssl_stream_ptr;
+                    logger->debug("Accepted a connection from client at {}", client_ip);
+                    // Put the new socket in the map
+                    client_sockets.emplace(client_ip, ssl_stream_ptr);
+                    // Start a read for the message size
+                    start_size_read(client_ip);
+                    // Enqueue another accept operation for the connection listener so it keeps listening
+                    do_accept();
+                }
+                else {
+                    logger->warn("Handshake failed: {}", handshake_error.message());
+                }
+            });
+    }
+}
+
+void VoterIDService::configure_ssl_context(asio::ssl::context& ssl_context, 
+                           const std::string& cert_file, 
+                           const std::string& key_file, 
+                           const std::string& ca_file) {
+    ssl_context.use_certificate_chain_file(cert_file);
+    ssl_context.use_private_key_file(key_file, asio::ssl::context::pem);
+    ssl_context.load_verify_file(ca_file);
+    ssl_context.set_verify_mode(asio::ssl::verify_peer);
+    ssl_context.set_verify_callback(
+        [](bool preverified, asio::ssl::verify_context& ctx) -> bool {
+            // Here, you can implement additional verification logic if necessary
+            return preverified;
+        });
 }
 
 void VoterIDService::start_size_read(asio::ip::tcp::endpoint client_ip) {
