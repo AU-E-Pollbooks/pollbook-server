@@ -32,7 +32,7 @@ private:
     /* A variable for ssl context with tls ver 12 */ 
     asio::ssl::context ssl_context_id;
     /** The socket to use to communicate with the check-in server */
-    asio::ip::tcp::socket checkin_server_socket;
+    asio::ssl::stream<asio::ip::tcp::socket> checkin_server_socket;
     /** The socket used to communicate with the voter-ID server */
     asio::ssl::stream<asio::ip::tcp::socket> id_server_socket;
     /* asio::ip::tcp::socket id_server_socket; */
@@ -116,7 +116,7 @@ public:
      * hostname and port. This method blocks until the server is connected.
      */
     void connect_id_server(const std::string& server_hostname, const std::string& server_port);
-    void make_handshake(const std::string& host, const std::string& port);
+    void make_handshake(const std::string& host, const std::string& port, const std::string& socket);
 
     /* --- Various asynchronous I/O event handlers for receiving messages from the servers --- */
 

@@ -69,9 +69,11 @@ void PollbookClient::configure_ssl_context(asio::ssl::context& ssl_context,
 }
 
 void PollbookClient::connect_checkin_server(const std::string& hostname, const std::string& port) {
-    asio::ip::tcp::resolver server_resolver(network_io_context);
-    auto resolve_results = server_resolver.resolve(hostname, port);
-    asio::connect(checkin_server_socket, resolve_results);
+    //asio::ip::tcp::resolver server_resolver(network_io_context);
+    //auto resolve_results = server_resolver.resolve(hostname, port);
+    //asio::connect(checkin_server_socket, resolve_results);
+    PollbookClient::make_handshake(hostname, port, checkin_server_socket);
+
     checkin_connected = true;
 }
 
@@ -79,7 +81,7 @@ void PollbookClient::connect_id_server(const std::string& hostname, const std::s
 /* void PollbookClient::connect_id_server(asio::ssl::stream<asio::ip::tcp::socket>& ssl_socket, const std::string& port) { */
     /* asio::ip::tcp::resolver server_resolver(network_io_context); */
     /* auto resolve_results = server_resolver.resolve(hostname, port); */
-    PollbookClient::make_handshake(hostname, port);
+    PollbookClient::make_handshake(hostname, port, id_server_socket);
     /* asio::connect(id_server_socket, resolve_results); */
     /* asio::ip::tcp::resolver resolver(id_server_socket.get_io_context()); */
     /* auto endpoints = resolver.resolve(host, service); */
@@ -92,16 +94,16 @@ void PollbookClient::connect_id_server(const std::string& hostname, const std::s
     id_connected = true;
 }
 
-void PollbookClient::make_handshake(const std::string& host, const std::string& port) {
+void PollbookClient::make_handshake(const std::string& host, const std::string& port, const std::string& socket) {
     // Resolve the host and service to a list of endpoints
     asio::ip::tcp::resolver resolver(network_io_context);
     auto endpoints = resolver.resolve(host, port);
     
     // Attempt to connect to an endpoint
-    asio::connect(id_server_socket.lowest_layer(), endpoints);
+    asio::connect(socket.lowest_layer(), endpoints);
     
     // Perform the SSL handshake
-    id_server_socket.handshake(asio::ssl::stream_base::client);
+    socket.handshake(asio::ssl::stream_base::client);
 }
 
 void PollbookClient::start_id_request_write(std::uint64_t timestamp, const std::vector<std::uint8_t>& voter_id_data) {

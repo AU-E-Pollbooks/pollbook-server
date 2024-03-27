@@ -5,6 +5,9 @@
 
 #include <spdlog/spdlog.h>
 #include <asio.hpp>
+#include <asio/ssl.hpp>
+#include <asio/ssl/context.hpp>
+#include <iostream>
 
 #include <cstdint>
 #include <map>
@@ -33,6 +36,11 @@ private:
     /** The io_context that all the sockets will use */
     asio::io_context network_io_context;
     std::thread network_thread;
+
+    /**
+     * A variable for ssl context with TLS ver 12
+    */
+    asio::ssl::context ssl_context;
     /**
      * A "server socket" that listens for incoming connections from clients
      */
@@ -41,6 +49,7 @@ private:
      * Maps a client IP address to a socket connected to that client
      */
     std::map<asio::ip::tcp::endpoint, asio::ip::tcp::socket> client_sockets;
+    std::map<asio::ip::tcp::endpoint, std::shared_ptr<asio::ssl::stream<asio::ip::tcp::socket>>> client_ssl_streams;
     /**
      * Maps a client IP address to a byte buffer currently being used to
      * receive a message from that client.
@@ -79,6 +88,14 @@ private:
      * Starts an asynchronous accept request on the connection listener.
      */
     void do_accept();
+
+    /**
+     * 
+    */
+    void configure_ssl_context(asio::ssl::context& ssl_context,
+                               const std::string& cert_file,
+                               const std::string& key_file,
+                               const std::string& ca_file);
 
     /**
      * Starts an asynchronous read on the socket for the specified client
