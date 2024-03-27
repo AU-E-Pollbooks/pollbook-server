@@ -24,9 +24,9 @@ VoterIDService::VoterIDService()
           signer(openssl::EnvelopeKey::from_pem_private(Config::getString(Config::SECTION_SECURITY, Config::LOCAL_PRIVATE_KEY)),
                  signature_digest_algorithm) {
           configure_ssl_context(ssl_context,
-                      "/pollbook-server/build/apps/local-test-deployment/server0/cert.pem",
-                      "/pollbook-server/build/apps/local-test-deployment/server0/server.key", 
-                      "/pollbook-server/build/apps/local-test-deployment/server0/ca/ca.pem");
+                      "/pollbook-server/build/apps/local-test-deployment/server1/id_cert.crt",
+                      "/pollbook-server/build/apps/local-test-deployment/server1/private_key.pem", 
+                      "/pollbook-server/build/apps/local-test-deployment/server1/ca/ca_cert.crt");
 }
 
 void VoterIDService::do_accept() {
@@ -40,20 +40,20 @@ void VoterIDService::do_accept() {
 void VoterIDService::handle_accept(const asio::error_code& error, asio::ip::tcp::socket new_socket) {
     if (!error) {
         /* auto ssl_stream = std::make_shared<asio::ssl::stream<asio::ip::tcp::socket>>(std::move(new_socket), ssl_context); */
+        auto client_ip = new_socket.remote_endpoint();
         auto ssl_stream_ptr = std::make_shared<asio::ssl::stream<asio::ip::tcp::socket>>(std::move(new_socket), ssl_context);
-        auto client_endpoint = ssl_stream_ptr->lowest_layer().remote_endpoint();
 
         ssl_stream_ptr->async_handshake(asio::ssl::stream_base::server,
-            [this, ssl_stream_ptr, client_endpoint](const asio::error_code& handshake_error) {
+            [this, ssl_stream_ptr, client_ip](const asio::error_code& handshake_error) {
                 if (!handshake_error) {
                     // The handshake was successful
                     // You can now read or write to the socket
                     /* asio::ip::tcp::endpoint client_ip = new_socket.remote_endpoint(); */
-                    auto client_ip = ssl_stream_ptr->lowest_layer().remote_endpoint();
-                    client_ssl_streams[client_endpoint] = ssl_stream_ptr;
+                    /* auto client_ip = ssl_stream_ptr->lowest_layer().remote_endpoint(); */
+                    client_ssl_streams[client_ip] = ssl_stream_ptr;
                     logger->debug("Accepted a connection from client at {}", client_ip);
                     // Put the new socket in the map
-                    client_sockets.emplace(client_ip, ssl_stream_ptr);
+                    /* client_sockets.emplace(client_ip, ssl_stream_ptr); */
                     // Start a read for the message size
                     start_size_read(client_ip);
                     // Enqueue another accept operation for the connection listener so it keeps listening
@@ -63,6 +63,9 @@ void VoterIDService::handle_accept(const asio::error_code& error, asio::ip::tcp:
                     logger->warn("Handshake failed: {}", handshake_error.message());
                 }
             });
+    }
+    else {
+        logger->warn("Connection failed: {}", error.message());
     }
 }
 
@@ -84,10 +87,11 @@ void VoterIDService::configure_ssl_context(asio::ssl::context& ssl_context,
 void VoterIDService::start_size_read(asio::ip::tcp::endpoint client_ip) {
     std::shared_ptr<std::size_t> message_size = std::make_shared<std::size_t>();
     auto msg_size_str = std::make_shared<std::string>();
+    /* auto ssl_stream = client_ssl_streams[client_ip]; */
     if (client_buffers.find(client_ip) == client_buffers.end()) {
         client_buffers[client_ip] = std::make_shared<asio::streambuf>();
     }
-    asio::async_read_until(client_sockets.at(client_ip), *client_buffers[client_ip], "\n",
+    asio::async_read_until(*(client_ssl_streams.at(client_ip)), *client_buffers[client_ip], "\n",
     [this, client_ip, message_size, msg_size_str](const asio::error_code& error, std::size_t bytes_read) {
         if(!error) {
             *msg_size_str = std::string(asio::buffer_cast<const char*>(this->client_buffers[client_ip]->data()), bytes_read);
@@ -97,7 +101,7 @@ void VoterIDService::start_size_read(asio::ip::tcp::endpoint client_ip) {
             start_payload_read(client_ip, *message_size);
         } else if(error == asio::error::eof || error == asio::error::connection_aborted) {
             logger->debug("Client at {} disconnected before sending message size", client_ip);
-            client_sockets.erase(client_ip);
+            client_ssl_streams.erase(client_ip);
         }
     });
 }
@@ -107,7 +111,7 @@ void VoterIDService::start_payload_read(asio::ip::tcp::endpoint client_ip, std::
     if (client_buffers.find(client_ip) == client_buffers.end()) {
         client_buffers[client_ip] = std::make_shared<asio::streambuf>();
     }
-    asio::async_read_until(client_sockets.at(client_ip), *client_buffers[client_ip], "\n", 
+    asio::async_read_until(*(client_ssl_streams.at(client_ip)), *client_buffers[client_ip], "\n", 
     [this, msg, client_ip, size_of_message](const asio::error_code& error, std::size_t bytes_read) {
         if(!error) {
             if(size_of_message == bytes_read - 1) {
@@ -121,11 +125,11 @@ void VoterIDService::start_payload_read(asio::ip::tcp::endpoint client_ip, std::
                 handle_validation_request(client_ip, request);
             } else {
                 logger->warn("Size of the message does not match the size that is received from the server for the client {}", client_ip);
-                client_sockets.erase(client_ip);
+                client_ssl_streams.erase(client_ip);
             }
         } else if(error == asio::error::eof || error == asio::error::connection_aborted) {
             logger->debug("Client at {} disconnected before sending entire message", client_ip);
-            client_sockets.erase(client_ip);
+            client_ssl_streams.erase(client_ip);
         } else {
             logger->warn("Unexpected I/O error when reading a request message from client {}. Error: {}", client_ip, error.message());
         }
@@ -191,7 +195,7 @@ void VoterIDService::handle_validation_request(const asio::ip::tcp::endpoint& cl
     std::string buffer = response_msg_str + "\n";
 
     logger->debug("Sending a response of size {} to client at {}", response_size, client_ip);
-    asio::write(client_sockets.at(client_ip), asio::buffer(buffer));
+    asio::write(*(client_ssl_streams.at(client_ip)), asio::buffer(buffer));
 }
 
 std::uint32_t VoterIDService::validate_and_match_id_data(const std::vector<std::uint8_t>& id_data) {

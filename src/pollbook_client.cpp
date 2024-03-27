@@ -18,7 +18,7 @@ namespace epollbook {
 PollbookClient::PollbookClient()
         : logger(spdlog::get(LogUtils::get_default_logger_name())),
           network_work_guard(network_io_context.get_executor()),
-          ssl_context_id(asio::ssl::context::tlsv12_server),
+          ssl_context_id(asio::ssl::context::tlsv12_client),
           checkin_server_socket(network_io_context),
           id_server_socket(network_io_context, ssl_context_id),
           checkin_connected(false),
@@ -34,9 +34,9 @@ PollbookClient::PollbookClient()
                                    openssl::DigestAlgorithm::SHA256),
           network_thread([this]() { network_io_context.run(); }) {
               configure_ssl_context(ssl_context_id, 
-                    "/pollbook-server/build/apps/local-test-deployment/client0/cert.pem",
-                    "/pollbook-server/build/apps/local-test-deployment/client0/client.key",
-                    "/pollbook-server/build/apps/local-test-deployment/client0/ca/ca.pem");
+                    "/pollbook-server/build/apps/local-test-deployment/client0/client_cert.crt",
+                    "/pollbook-server/build/apps/local-test-deployment/client0/private_key.pem",
+                    "/pollbook-server/build/apps/local-test-deployment/client0/ca/ca_cert.crt");
           }
 
 PollbookClient::~PollbookClient() {
