@@ -24,9 +24,9 @@ VoterIDService::VoterIDService()
           signer(openssl::EnvelopeKey::from_pem_private(Config::getString(Config::SECTION_SECURITY, Config::LOCAL_PRIVATE_KEY)),
                  signature_digest_algorithm) {
           configure_ssl_context(ssl_context,
-                      "/pollbook-server/build/apps/local-test-deployment/server1/id_cert.crt",
+                      "/pollbook-server/build/apps/local-test-deployment/server1/id_cert.pem",
                       "/pollbook-server/build/apps/local-test-deployment/server1/private_key.pem", 
-                      "/pollbook-server/build/apps/local-test-deployment/server1/ca/ca_cert.crt");
+                      "/pollbook-server/build/apps/local-test-deployment/server1/ca/ca_cert.pem");
 }
 
 void VoterIDService::do_accept() {

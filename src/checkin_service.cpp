@@ -28,7 +28,7 @@ CheckinService::CheckinService()
     });
     configure_ssl_context(ssl_context,
                       "/pollbook-server/build/apps/local-test-deployment/server0/cert.pem",
-                      "/pollbook-server/build/apps/local-test-deployment/server0/server.key", 
+                      "/pollbook-server/build/apps/local-test-deployment/server0/private_key.pem", 
                       "/pollbook-server/build/apps/local-test-deployment/server0/ca/ca.pem")
 }
 

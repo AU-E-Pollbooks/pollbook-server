@@ -34,9 +34,9 @@ PollbookClient::PollbookClient()
                                    openssl::DigestAlgorithm::SHA256),
           network_thread([this]() { network_io_context.run(); }) {
               configure_ssl_context(ssl_context_id, 
-                    "/pollbook-server/build/apps/local-test-deployment/client0/client_cert.crt",
+                    "/pollbook-server/build/apps/local-test-deployment/client0/client_cert.pem",
                     "/pollbook-server/build/apps/local-test-deployment/client0/private_key.pem",
-                    "/pollbook-server/build/apps/local-test-deployment/client0/ca/ca_cert.crt");
+                    "/pollbook-server/build/apps/local-test-deployment/client0/ca/ca_cert.pem");
           }
 
 PollbookClient::~PollbookClient() {

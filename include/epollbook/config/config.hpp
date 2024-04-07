@@ -134,6 +134,22 @@ public:
      * fresh enough. Requests older than this will be considered stale.
      */
     static const std::string REQUEST_FRESHNESS_INTERVAL;
+    /**
+     * The path to the file containing the certificate for the check-in service
+    */
+    static const std::string CHECKIN_SERVICE_CERT;
+    /**
+     * The path to the file containing the certificate for the voter id service
+    */
+    static const std::string ID_SERVICE_CERT;
+    /**
+     * The path to the file containing the certificate for the running program (client or server)
+    */
+    static const std::string LOCAL_CERT;
+    /**
+     * The path to the file containing the certificate for the certificate authority
+    */
+    static const std::string CA_CERT;
 };
 
 }  // namespace epollbook
