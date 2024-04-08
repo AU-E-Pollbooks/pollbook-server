@@ -116,7 +116,7 @@ public:
      * hostname and port. This method blocks until the server is connected.
      */
     void connect_id_server(const std::string& server_hostname, const std::string& server_port);
-    void make_handshake(const std::string& host, const std::string& port, const asio::ssl::stream<asio::ip::tcp::socket> socket);
+    void make_handshake(const std::string& host, const std::string& port, const std::string& socket);
 
     /* --- Various asynchronous I/O event handlers for receiving messages from the servers --- */
 
