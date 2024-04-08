@@ -53,20 +53,20 @@ void CheckinService::do_accept() {
 void CheckinService::handle_accept(const asio::error_code& error, asio::ip::tcp::socket new_socket) {
     if (!error) {
         /* auto ssl_stream = std::make_shared<asio::ssl::stream<asio::ip::tcp::socket>>(std::move(new_socket), ssl_context); */
+        auto client_ip = new_socket.remote_endpoint();
         auto ssl_stream_ptr = std::make_shared<asio::ssl::stream<asio::ip::tcp::socket>>(std::move(new_socket), ssl_context);
-        auto client_endpoint = ssl_stream_ptr->lowest_layer().remote_endpoint();
 
         ssl_stream_ptr->async_handshake(asio::ssl::stream_base::server,
-            [this, ssl_stream_ptr, client_endpoint](const asio::error_code& handshake_error) {
+            [this, ssl_stream_ptr, client_ip](const asio::error_code& handshake_error) {
                 if (!handshake_error) {
                     // The handshake was successful
                     // You can now read or write to the socket
                     /* asio::ip::tcp::endpoint client_ip = new_socket.remote_endpoint(); */
-                    auto client_ip = ssl_stream_ptr->lowest_layer().remote_endpoint();
-                    client_ssl_streams[client_endpoint] = ssl_stream_ptr;
+                    /*auto client_ip = ssl_stream_ptr->lowest_layer().remote_endpoint();*/
+                    client_ssl_streams[client_ip] = ssl_stream_ptr;
                     logger->debug("Accepted a connection from client at {}", client_ip);
                     // Put the new socket in the map
-                    client_sockets.emplace(client_ip, ssl_stream_ptr);
+                    /*client_sockets.emplace(client_ip, ssl_stream_ptr);*/
                     // Start a read for the message size
                     start_size_read(client_ip);
                     // Enqueue another accept operation for the connection listener so it keeps listening
