@@ -26,7 +26,7 @@ const std::string Config::REQUEST_FRESHNESS_INTERVAL = "request_freshness_interv
 const std::string Config::CHECKIN_SERVICE_CERT = "checkin_certificate.pem";
 const std::string Config::ID_SERVICE_CERT = "id_certificate.pem";
 const std::string Config::LOCAL_CERT = "certificate.pem";
-const std::string Config::CA_CERT = "ca_cert.pem";
+const std::string Config::CA_CERT = "ca/ca_cert.pem";
 
 std::atomic<int> Config::singleton_initialized_flag = 0;
 

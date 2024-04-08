@@ -27,9 +27,12 @@ CheckinService::CheckinService()
         network_io_context.run();
     });
     configure_ssl_context(ssl_context,
-                      "/pollbook-server/build/apps/local-test-deployment/server0/cert.pem",
-                      "/pollbook-server/build/apps/local-test-deployment/server0/private_key.pem", 
-                      "/pollbook-server/build/apps/local-test-deployment/server0/ca/ca.pem")
+                      /*"/pollbook-server/build/apps/local-test-deployment/server1/id_cert.pem",
+                      "/pollbook-server/build/apps/local-test-deployment/server1/private_key.pem", 
+                      "/pollbook-server/build/apps/local-test-deployment/server1/ca/ca_cert.pem");*/
+                      Config::getString(Config::SECTION_SECURITY, Config::CHECKIN_SERVICE_CERT),
+                      Config::getString(Config::SECTION_SECURITY, Config::LOCAL_PRIVATE_KEY),
+                      Config::getString(Config::SECTION_SECURITY, Config::CA_CERT));
 }
 
 CheckinService::~CheckinService() {
