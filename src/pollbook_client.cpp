@@ -97,7 +97,7 @@ void PollbookClient::connect_id_server(const std::string& hostname, const std::s
     id_connected = true;
 }
 
-void PollbookClient::make_handshake(const std::string& host, const std::string& port, const asio::ssl::stream<asio::basic_stream_socket<asio::ip::tcp>> socket) {
+void PollbookClient::make_handshake(const std::string& host, const std::string& port, const asio::ssl::stream<asio::ip::tcp::socket> socket) {
     // Resolve the host and service to a list of endpoints
     asio::ip::tcp::resolver resolver(network_io_context);
     auto endpoints = resolver.resolve(host, port);
