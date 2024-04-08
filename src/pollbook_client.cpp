@@ -34,9 +34,12 @@ PollbookClient::PollbookClient()
                                    openssl::DigestAlgorithm::SHA256),
           network_thread([this]() { network_io_context.run(); }) {
               configure_ssl_context(ssl_context_id, 
-                    "/pollbook-server/build/apps/local-test-deployment/client0/client_cert.pem",
+                    /*"/pollbook-server/build/apps/local-test-deployment/client0/client_cert.pem",
                     "/pollbook-server/build/apps/local-test-deployment/client0/private_key.pem",
-                    "/pollbook-server/build/apps/local-test-deployment/client0/ca/ca_cert.pem");
+                    "/pollbook-server/build/apps/local-test-deployment/client0/ca/ca_cert.pem");*/
+                    Config::getString(Config::SECTION_SECURITY, Config::LOCAL_CERT),
+                    Config::getString(Config::SECTION_SECURITY, Config::LOCAL_PRIVATE_KEY),
+                    Config::getString(Config::SECTION_SECURITY, Config::CA_CERT));
           }
 
 PollbookClient::~PollbookClient() {
@@ -94,7 +97,7 @@ void PollbookClient::connect_id_server(const std::string& hostname, const std::s
     id_connected = true;
 }
 
-void PollbookClient::make_handshake(const std::string& host, const std::string& port, const std::string& socket) {
+void PollbookClient::make_handshake(const std::string& host, const std::string& port, const asio::ssl::stream<asio::basic_stream_socket<asio::ip::tcp>> socket) {
     // Resolve the host and service to a list of endpoints
     asio::ip::tcp::resolver resolver(network_io_context);
     auto endpoints = resolver.resolve(host, port);
