@@ -19,7 +19,7 @@ PollbookClient::PollbookClient()
         : logger(spdlog::get(LogUtils::get_default_logger_name())),
           network_work_guard(network_io_context.get_executor()),
           ssl_context_id(asio::ssl::context::tlsv12_client),
-          checkin_server_socket(network_io_context),
+          checkin_server_socket(network_io_context, ssl_context_id),
           id_server_socket(network_io_context, ssl_context_id),
           checkin_connected(false),
           id_connected(false),
