@@ -23,6 +23,11 @@ const std::string Config::CLIENT_KEYS_FOLDER = "client_keys_folder";
 const std::string Config::CLIENT_KEY_FILE_PREFIX = "client_key_file_prefix";
 const std::string Config::REQUEST_FRESHNESS_INTERVAL = "request_freshness_interval";
 
+const std::string Config::CHECKIN_SERVICE_CERT = "checkin_certificate.pem";
+const std::string Config::ID_SERVICE_CERT = "id_certificate.pem";
+const std::string Config::LOCAL_CERT = "certificate.pem";
+const std::string Config::CA_CERT = "ca/ca_cert.pem";
+
 std::atomic<int> Config::singleton_initialized_flag = 0;
 
 // This static variable must be re-declared here even though it is not initialized here

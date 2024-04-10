@@ -14,6 +14,7 @@ target_include_directories(epollbook PUBLIC
 # Specify library dependencies for this target
 target_link_libraries(epollbook
     OpenSSL::Crypto
+    OpenSSL::SSL
     spdlog::spdlog
     nlohmann_json::nlohmann_json)
 
