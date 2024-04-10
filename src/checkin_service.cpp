@@ -2,7 +2,9 @@
 #include "epollbook/config/config.hpp"
 #include "epollbook/log_utils.hpp"
 
+#include <fstream>
 #include <asio.hpp>
+#include <openssl/rand.h>
 
 #include <array>
 #include <iostream>
@@ -129,6 +131,27 @@ void CheckinService::start_payload_read(asio::ip::tcp::endpoint client_ip, std::
     });
 }
 
+std::string CheckinService::generate_secret(int length) {
+    unsigned char buffer[length];
+    if (RAND_bytes(buffer, length) != 1) {
+        throw std::runtime_error("Failed to generate secret");
+    }
+    std::stringstream ss;
+    for (int i = 0; i < length; i++) {
+        ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(buffer[i]);
+    }
+    return ss.str();
+}
+
+void CheckinService::write_to_csv(const std::string& ticket, const std::string& secret, const std::uint32_t& id) {
+    std::ofstream file("ticket_validation.csv", std::ios::app);
+    if (file.is_open()) {
+        file << ticket << "," << secret << "," << id << std::endl;
+        file.close();
+    } else
+        logger->warn("Error: Unable to write to CSV file");
+}
+
 void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& client_ip, const CheckinRequest& request) {
     // Ensure the public key for this client is in memory
     if(client_verifiers.find(request.body.client_id_num) == client_verifiers.end()) {
@@ -162,16 +185,31 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
     // Sign the body of the response message with the service's key
     std::string response_body_str = CheckinResponse::Body::ToJson(response_body).dump();
 
+    /* uuid_t uuid; */
+    /* chat uuid_str; */
+    /* uuid_generate(uuid); */
+    /* uuid_unparse(uuid, uuid_str); */
+    std::string ticket;
+    std::string secret;
+    if (accept) {
+        ticket = generate_secret(16);
+        secret = generate_secret(32);
+        client_tickets_map[request.body.client_id_num] = std::make_pair(ticket, secret);
+        write_to_csv(ticket, secret, request.body.client_id_num);
+    } else {
+        ticket = "";
+        secret = "";
+    }
+
+
     signer.init();
     signer.add_bytes(response_body_str.data(), response_body_str.size());
     // Serialize and send the response message, including the signature
-    CheckinResponse response(std::move(response_body), signer.finalize());
-    
+    CheckinResponse response(std::move(response_body), signer.finalize(), ticket);
+ 
     // convert response into json and convert it into a string
-    logger->debug("Serializing response");
     nlohmann::json response_json = CheckinResponse::ToJson(response);
 
-    logger->debug("sending message");
     std::size_t response_size = response_json.size();
     std::string response_message_string = response_json.dump();
     std::string response_string = std::to_string(response_size) + "\n" + response_message_string +"\n";

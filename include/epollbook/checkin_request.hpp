@@ -81,6 +81,7 @@ struct CheckinRequest {
     };
 
     Body body;
+
     /**
      * A signature on this message using the client's public key.
      */
@@ -183,11 +184,17 @@ struct CheckinResponse {
      * A signature on this message using the check-in service's public key.
      */
     std::vector<std::uint8_t> checkin_service_signature;
+    /**
+     * Randomly generated nonce that is sent after validation 
+     */
+    std::string ticket;
 
     CheckinResponse(const Body& message_body,
-                    const std::vector<std::uint8_t>& checkin_service_signature)
+                    const std::vector<std::uint8_t>& checkin_service_signature,
+                    const std::string& client_ticket)
             : body(message_body),
-              checkin_service_signature(checkin_service_signature) {}
+              checkin_service_signature(checkin_service_signature),
+              ticket(client_ticket) {}
 
     // Functions to convert json to a response and vice versa
     static nlohmann::json ToJson(const CheckinResponse& response) {
@@ -195,6 +202,7 @@ struct CheckinResponse {
         std::string signature_base64 = Base64::encode(response.checkin_service_signature.data(), response.checkin_service_signature.size());
         json["body"] = CheckinResponse::Body::ToJson(response.body);
         json["checkin_service_signature"] = signature_base64;
+        json["ticket"] = response.ticket;
         return json;
     }
 
@@ -209,7 +217,7 @@ struct CheckinResponse {
                 json["body"]["voter_unique_id"]);
 
         std::vector<std::uint8_t> service_signature = Base64::decode(json["checkin_service_signature"]);
-        CheckinResponse response(std::move(response_body), service_signature);
+        CheckinResponse response(std::move(response_body), service_signature, json["ticket"]);
 
         return response;
     }

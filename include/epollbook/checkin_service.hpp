@@ -57,6 +57,10 @@ private:
      * service.
      */
     openssl::Verifier id_service_verifier;
+    /* 
+     * A map between client id and client's tickets and local secrets 
+     */
+    std::map<std::uint32_t, std::pair<std::string, std::string>> client_tickets_map;
     /**
      * The Signer object the server uses to sign messages, which is configured
      * with the service's signing key.
@@ -103,6 +107,8 @@ private:
      * @param client_ip The IP address of the client that sent the request
      * @param request The deserialized CheckinRequest object containing the client's message
      */
+    std::string generate_secret(int length);
+    void write_to_csv(const std::string& ticket, const std::string& secret, const std::uint32_t& id);
     void handle_checkin_request(const asio::ip::tcp::endpoint& client_ip, const CheckinRequest& request);
 
     /**
