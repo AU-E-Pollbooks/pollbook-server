@@ -25,9 +25,9 @@ CheckinService::CheckinService()
           signer(openssl::EnvelopeKey::from_pem_private(Config::getString(Config::SECTION_SECURITY, Config::LOCAL_PRIVATE_KEY)),
                  signature_digest_algorithm) {
     load_voter_list(Config::getString(Config::SECTION_BASIC, Config::VOTER_LIST_FILE));
-    network_thread = std::thread([&] {
-        network_io_context.run();
-    });
+    /* network_thread = std::thread([&] { */
+    /*     network_io_context.run(); */
+    /* }); */
     configure_ssl_context(ssl_context,
                       /*"/pollbook-server/build/apps/local-test-deployment/server1/id_cert.pem",
                       "/pollbook-server/build/apps/local-test-deployment/server1/private_key.pem", 
@@ -39,9 +39,10 @@ CheckinService::CheckinService()
 
 CheckinService::~CheckinService() {
     network_io_context.stop();
-    if (network_thread.joinable()) {
-        network_thread.join();
-    }
+    network_thread.join();
+    /* if (network_thread.joinable()) { */
+    /*     network_thread.join(); */
+    /* } */
 }
 
 void CheckinService::do_accept() {
@@ -91,7 +92,6 @@ void CheckinService::configure_ssl_context(asio::ssl::context& ssl_context,
     ssl_context.set_verify_mode(asio::ssl::verify_peer);
     ssl_context.set_verify_callback(
         [](bool preverified, asio::ssl::verify_context& ctx) -> bool {
-            // Here, you can implement additional verification logic if necessary
             return preverified;
         });
 }
@@ -237,8 +237,8 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
     if (accept) {
         ticket = generate_secret(16);
         secret = generate_secret(32);
-        client_tickets_map[request.body.client_id_num] = std::make_pair(ticket, secret);
-        write_to_csv(ticket, secret, request.body.client_id_num);
+        client_tickets_map[request.body.voter_unique_id] = std::make_pair(ticket, secret);
+        write_to_csv(ticket, secret, request.body.voter_unique_id);
     } else {
         ticket = "";
         secret = "";
@@ -248,7 +248,8 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
     signer.init();
     signer.add_bytes(response_body_str.data(), response_body_str.size());
     // Serialize and send the response message, including the signature
-    CheckinResponse response(std::move(response_body), signer.finalize(), ticket);
+    Client client_type = Client::FirstClient;
+    CheckinResponse response(std::move(response_body), signer.finalize(), client_type, ticket);
  
     // convert response into json and convert it into a string
     nlohmann::json response_json = CheckinResponse::ToJson(response);

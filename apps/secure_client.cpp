@@ -25,13 +25,23 @@ int main(int argc, char** argv) {
 
     epollbook::PollbookClient client;
     // connect to just the id server instead of both
-    client.connect_checkin_server();
+    /* client.connect_checkin_server(); */
+    client.connect_checkin_server(
+            epollbook::Config::getString(
+                    epollbook::Config::SECTION_BASIC, 
+                    epollbook::Config::CHECKIN_SERVICE_HOST
+                ),
+            epollbook::Config::getString(
+                    epollbook::Config::SECTION_BASIC, 
+                    epollbook::Config::CHECKIN_SERVICE_PORT
+                )
+            );
     std::cout << "Connected to Check In server" << std::endl;
 
-    std::string nonce;
-    std::cout << "Enter nonce for client" <<std::endl;
-    std::cin >> nonce;
+    std::string ticket;
+    std::cout << "Enter ticket for client" <<std::endl;
+    std::cin >> ticket;
 
-    //Send nonce to checkin server to fully check in voter
-    client.send_string_message(nonce);
+    //Send ticket to checkin server to fully check in voter
+    client.send_string_message(ticket);
 }

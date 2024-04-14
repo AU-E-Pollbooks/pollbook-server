@@ -66,7 +66,6 @@ void PollbookClient::configure_ssl_context(asio::ssl::context& ssl_context,
     ssl_context.set_verify_mode(asio::ssl::verify_peer);
     ssl_context.set_verify_callback(
         [](bool preverified, asio::ssl::verify_context& ctx) -> bool {
-            // Here, you can implement additional verification logic if necessary
             return preverified;
         });
 }
@@ -102,19 +101,28 @@ void PollbookClient::make_handshake(const std::string& host, const std::string& 
     asio::ip::tcp::resolver resolver(network_io_context);
     auto endpoints = resolver.resolve(host, port);
     
-    if(is_id_server) {
-        // Attempt to connect to an endpoint
-        asio::connect(id_server_socket.lowest_layer(), endpoints);
-    
-        // Perform the SSL handshake
-        id_server_socket.handshake(asio::ssl::stream_base::client);
-    }
-    else {
-        // Attempt to connect to an endpoint
-        asio::connect(checkin_server_socket.lowest_layer(), endpoints);
-    
-        // Perform the SSL handshake
-        checkin_server_socket.handshake(asio::ssl::stream_base::client);
+    try {
+        if(is_id_server) {
+            // Attempt to connect to an endpoint
+            /* std::cout << "id break" << std::endl; */
+            asio::connect(id_server_socket.lowest_layer(), endpoints);
+        
+            // Perform the SSL handshake
+            id_server_socket.handshake(asio::ssl::stream_base::client);
+        }
+        else {
+            // Attempt to connect to an endpoint
+            /* std::cout << "checkin break" << std::endl; */
+            asio::connect(checkin_server_socket.lowest_layer(), endpoints);
+            std::cout << "breaking confirmed" << std::endl;
+        
+            // Perform the SSL handshake
+            checkin_server_socket.handshake(asio::ssl::stream_base::client);
+        }
+    }catch(const std::exception& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+        throw;
+
     }
 }
 
@@ -232,7 +240,7 @@ void PollbookClient::start_checkin_request_write(const VerifiedVoterID& verified
     private_key_signer.init();
     private_key_signer.add_bytes(request_body_str.data(), request_body_str.size());
     // Construct the message, with the signature at the end
-    CheckinRequest request(std::move(request_body), private_key_signer.finalize());
+    CheckinRequest request(std::move(request_body), Client::FirstClient, private_key_signer.finalize());
 
     // Serialize and send the message 
     nlohmann::json request_json = CheckinRequest::ToJson(request);
@@ -334,12 +342,16 @@ void PollbookClient::send_string_message(const std::string& message) {
     if(!checkin_connected) {
         throw std::runtime_error("Client must be connected before calling send_string_message!");
     }
-    // Message format: Length of the message in bytes, then body of the message
-    std::vector<uint8_t> outgoing_message_buffer(sizeof(std::size_t) + message.size());
+    nlohmann::json j;
+    j["ticket"] = std::string(message);
     std::size_t message_size = message.size();
-    std::memcpy(outgoing_message_buffer.data(), &message_size, sizeof(message_size));
-    std::memcpy(outgoing_message_buffer.data() + sizeof(message_size), message.data(), message_size);
-    asio::write(checkin_server_socket, asio::buffer(outgoing_message_buffer));
+    std::string outgoing_message = std::to_string(message_size) + "\n" + message + "\n";
+    // Message format: Length of the message in bytes, then body of the message
+    /* std::vector<uint8_t> outgoing_message_buffer(sizeof(std::size_t) + message.size()); */
+    /* std::size_t message_size = message.size(); */
+    /* std::memcpy(outgoing_message_buffer.data(), &message_size, sizeof(message_size)); */
+    /* std::memcpy(outgoing_message_buffer.data() + sizeof(message_size), message.data(), message_size); */
+    asio::write(checkin_server_socket, asio::buffer(outgoing_message));
 }
 
 }  // namespace epollbook
