@@ -18,7 +18,7 @@ CheckinService::CheckinService()
                   network_io_context,
                   asio::ip::tcp::endpoint(
                       asio::ip::tcp::tcp::v4(), 
-                      Config::getUInt16(Config::SECTION_BASIC, Config::ID_SERVICE_PORT))),
+                      Config::getUInt16(Config::SECTION_BASIC, Config::CHECKIN_SERVICE_PORT))),
           id_service_verifier(openssl::EnvelopeKey::from_pem_public(
                                   Config::getString(Config::SECTION_SECURITY, Config::ID_SERVICE_PUBLIC_KEY)),
                               openssl::DigestAlgorithm::SHA256),
