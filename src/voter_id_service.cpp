@@ -44,6 +44,7 @@ void VoterIDService::handle_accept(const asio::error_code& error, asio::ip::tcp:
     if (!error) {
         /* auto ssl_stream = std::make_shared<asio::ssl::stream<asio::ip::tcp::socket>>(std::move(new_socket), ssl_context); */
         auto client_ip = new_socket.remote_endpoint();
+
         auto ssl_stream_ptr = std::make_shared<asio::ssl::stream<asio::ip::tcp::socket>>(std::move(new_socket), ssl_context);
 
         ssl_stream_ptr->async_handshake(asio::ssl::stream_base::server,
@@ -53,6 +54,26 @@ void VoterIDService::handle_accept(const asio::error_code& error, asio::ip::tcp:
                     // You can now read or write to the socket
                     /* asio::ip::tcp::endpoint client_ip = new_socket.remote_endpoint(); */
                     /* auto client_ip = ssl_stream_ptr->lowest_layer().remote_endpoint(); */
+                    X509* clientCert = SSL_get0_peer_certificate(ssl_stream_ptr->native_handle());
+
+                    if (clientCert != nullptr) {
+                        // Extract the public key from the certificate
+                        EVP_PKEY* pubkey = X509_get_pubkey(clientCert);
+                        if (pubkey != nullptr) {
+                            // Print out the public key
+                            std::cout << "Public Key: " << pubkey << std::endl;
+
+                            // Clean up
+                            EVP_PKEY_free(pubkey);
+                        } else {
+                            std::cerr << "Error extracting public key" << std::endl;
+                        }
+                        // Clean up
+                        X509_free(clientCert);
+                    } else {
+                        std::cerr << "No certificate received from client" << std::endl;
+                    }
+
                     client_ssl_streams[client_ip] = ssl_stream_ptr;
                     logger->debug("Accepted a connection from client at {}", client_ip);
                     // Put the new socket in the map
@@ -160,6 +181,8 @@ void VoterIDService::handle_validation_request(const asio::ip::tcp::endpoint& cl
     }
     // Ensure the public key for this client is in memory
     if(client_verifiers.find(request.body.client_id_num) == client_verifiers.end()) {
+        //Below we put public key into client keys folder to be able to verify later
+
         if(!load_client_public_key(request.body.client_id_num)) {
             logger->warn("Could not load the public key for client number {}. Ignoring a voter ID validation request.", request.body.client_id_num);
             return;

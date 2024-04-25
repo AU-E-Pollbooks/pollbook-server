@@ -9,7 +9,7 @@ openssl pkey -in server1/private_key.pem -out server1/id_pubkey.pem -pubout -out
 
 #cp server0/checkin_pubkey.pem server1
 #cp server1/id_pubkey.pem server0
-#mkdir -p server0/client_public_keys
+mkdir -p server0/client_public_keys
 
 #for num in {0..3}; do
 #    cp server0/checkin_pubkey.pem client${num}
@@ -18,7 +18,7 @@ openssl pkey -in server1/private_key.pem -out server1/id_pubkey.pem -pubout -out
 #    openssl pkey -in client${num}/private_key.pem -outform PEM -pubout -out server0/client_public_keys/client_pubkey_${num}.pem
 #done
 
-#cp -r server0/client_public_keys server1/
+cp -r server0/client_public_keys server1/
 
 #generates x509 certificate/private key for local certificate authority for use in generating other certs
 mkdir server0/ca
