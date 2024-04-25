@@ -107,7 +107,7 @@ void CheckinService::start_size_read(asio::ip::tcp::endpoint client_ip) {
         client_buffers[client_ip] = std::make_shared<asio::streambuf>();
     }
     // Asynchronous read until a newline character to get the message size.
-    asio::async_read_until(client_sockets.at(client_ip), *client_buffers[client_ip], "\n", 
+    asio::async_read_until(*(client_ssl_streams.at(client_ip)), *client_buffers[client_ip], "\n", 
         [this, client_ip, message_size, msg_size_str, msg](const asio::error_code& error, std::size_t bytes_read) {
             if (!error) {
                 // Successfully read the message size.
@@ -137,7 +137,7 @@ void CheckinService::start_payload_read(asio::ip::tcp::endpoint client_ip, std::
         client_buffers[client_ip] = std::make_shared<asio::streambuf>();
     }
     // Asynchronous read until a newline character to get the payload.
-    asio::async_read_until(client_sockets.at(client_ip), *client_buffers[client_ip], "\n",
+    asio::async_read_until(*(client_ssl_streams.at(client_ip)), *client_buffers[client_ip], "\n",
             [this, client_ip, size_of_message, msg](const asio::error_code& error, std::size_t bytes_read) {
                 if (!error) {
                     // Successfully read the payload.
@@ -259,7 +259,7 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
     std::string response_string = std::to_string(response_size) + "\n" + response_message_string +"\n";
 
     logger->debug("Sending a response of size {} to client at {}", response_size, client_ip);
-    asio::write(client_sockets.at(client_ip), asio::buffer(response_string));
+    asio::write(*(client_ssl_streams.at(client_ip)), asio::buffer(response_string));
     // Enqueue another read operation for the next message from this client (if any)
     start_size_read(client_ip);
 }
