@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cmath>
 #include <iostream>
+#include <sstream>
 
 namespace epollbook {
 
@@ -40,6 +41,20 @@ void VoterIDService::do_accept() {
             });
 }
 
+std::uint32_t VoterIDService::get_client_id_from_cert(X509* cert) {
+    char cn[256];
+    X509_NAME* subject = X509_get_subject_name(cert);
+    X509_NAME_get_text_by_NID(subject, NID_commonName, cn, sizeof(cn));
+    std::string s = std::string(cn);
+    std::stringstream ss(s);
+
+    std::string id_str;
+    std::getline(ss, id_str, ' ');
+    std::getline(ss, id_str, ' ');
+    std::uint32_t id = static_cast<std::uint32_t>(std::stoul(id_str));
+    return id;
+}
+
 void VoterIDService::handle_accept(const asio::error_code& error, asio::ip::tcp::socket new_socket) {
     if (!error) {
         /* auto ssl_stream = std::make_shared<asio::ssl::stream<asio::ip::tcp::socket>>(std::move(new_socket), ssl_context); */
@@ -57,12 +72,12 @@ void VoterIDService::handle_accept(const asio::error_code& error, asio::ip::tcp:
                     X509* clientCert = SSL_get0_peer_certificate(ssl_stream_ptr->native_handle());
 
                     if (clientCert != nullptr) {
+                        std::uint32_t client_id = get_client_id_from_cert(clientCert);
                         // Extract the public key from the certificate
                         EVP_PKEY* pubkey = X509_get_pubkey(clientCert);
                         if (pubkey != nullptr) {
-                            // Print out the public key
-                            std::cout << "Public Key: " << pubkey << std::endl;
-
+                            // Open a file to write the public key
+                            save_pub_key(pubkey, client_id);
                             // Clean up
                             EVP_PKEY_free(pubkey);
                         } else {
@@ -73,8 +88,8 @@ void VoterIDService::handle_accept(const asio::error_code& error, asio::ip::tcp:
                     } else {
                         std::cerr << "No certificate received from client" << std::endl;
                     }
-
                     client_ssl_streams[client_ip] = ssl_stream_ptr;
+                    
                     logger->debug("Accepted a connection from client at {}", client_ip);
                     // Put the new socket in the map
                     /* client_sockets.emplace(client_ip, ssl_stream_ptr); */
@@ -161,6 +176,22 @@ void VoterIDService::start_payload_read(asio::ip::tcp::endpoint client_ip, std::
     });
 }
 
+void VoterIDService::save_pub_key(EVP_PKEY* pubkey, std::uint32_t client_id) {
+    std::stringstream pub_key_file_path_builder;
+    pub_key_file_path_builder << Config::getString(Config::SECTION_SECURITY, Config::CLIENT_KEYS_FOLDER)
+                          << Config::getString(Config::SECTION_SECURITY, Config::CLIENT_KEY_FILE_PREFIX) << client_id << ".pem";
+    std::string pkey_file_path = pub_key_file_path_builder.str();
+    FILE* pubkey_file = fopen(pkey_file_path.c_str(), "w");
+    if (pubkey_file != nullptr) {
+        // Write the public key in PEM format
+        PEM_write_PUBKEY(pubkey_file, pubkey);
+        fclose(pubkey_file);
+    } else {
+        std::cerr << "Error opening file to write public key" << std::endl;
+    }
+}
+
+
 void VoterIDService::handle_validation_request(const asio::ip::tcp::endpoint& client_ip, const VoterIDRequest& request) {
     auto current_time = std::chrono::system_clock::now();
     uint64_t current_timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -232,7 +263,7 @@ std::uint32_t VoterIDService::validate_and_match_id_data(const std::vector<std::
 
 bool VoterIDService::load_client_public_key(std::uint32_t client_id) {
     std::stringstream key_file_path_builder;
-    key_file_path_builder << Config::getString(Config::SECTION_SECURITY, Config::CLIENT_KEYS_FOLDER) << "/"
+    key_file_path_builder << Config::getString(Config::SECTION_SECURITY, Config::CLIENT_KEYS_FOLDER)
                           << Config::getString(Config::SECTION_SECURITY, Config::CLIENT_KEY_FILE_PREFIX) << client_id << ".pem";
     std::string key_file_path = key_file_path_builder.str();
     try {

@@ -82,7 +82,14 @@ private:
      * not be a registered voter in this district.
      */
     std::map<std::uint32_t, VoterStatus> voter_status_table;
-
+    /**
+     * Gets client id from the certificate
+     */
+    std::uint32_t get_client_id_from_cert(X509* cert);
+    /**
+     * saves public key into a folder
+     */
+    void save_pub_key(EVP_PKEY* pubkey, std::uint32_t client_id);
     /**
      * Handler function for ASIO accept events.
      */

@@ -4,6 +4,7 @@
 #include "log_utils.hpp"
 #include "openssl/signature.hpp"
 #include "voter_id_request.hpp"
+#include "openssl/openssl_exception.hpp"
 
 #include <asio.hpp>
 #include <asio/ssl.hpp>
@@ -29,8 +30,10 @@ private:
     asio::io_context network_io_context;
     /** Work guard for the network IO context, to keep its run() thread alive while the client is idle */
     asio::executor_work_guard<asio::io_context::executor_type> network_work_guard;
-    /* A variable for ssl context with tls ver 12 */ 
+    /* A variable for ssl context for id server with tls ver 12 */ 
     asio::ssl::context ssl_context_id;
+    /* A variable for ssl context for checkin server with tls ver 12 */ 
+    asio::ssl::context ssl_context_checkin;
     /** The socket to use to communicate with the check-in server */
     asio::ssl::stream<asio::ip::tcp::socket> checkin_server_socket;
     /** The socket used to communicate with the voter-ID server */
@@ -106,6 +109,7 @@ public:
      * could be just an IP address) and port. This is a blocking, synchronous method.
      */
     void configure_ssl_context(asio::ssl::context& ssl_context, 
+                               asio::ssl::stream<asio::ip::tcp::socket>& socket,
                                const std::string& cert_file, 
                                const std::string& key_file, 
                                const std::string& ca_file);
