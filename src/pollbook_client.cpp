@@ -19,8 +19,9 @@ PollbookClient::PollbookClient()
         : logger(spdlog::get(LogUtils::get_default_logger_name())),
           network_work_guard(network_io_context.get_executor()),
           ssl_context_id(asio::ssl::context::tlsv12_client),
-          checkin_server_socket(network_io_context, ssl_context_id),
+          ssl_context_checkin(asio::ssl::context::tlsv12_client),
           id_server_socket(network_io_context, ssl_context_id),
+          checkin_server_socket(network_io_context, ssl_context_checkin),
           checkin_connected(false),
           id_connected(false),
           private_key_signer(openssl::EnvelopeKey::from_pem_private(
@@ -34,9 +35,12 @@ PollbookClient::PollbookClient()
                                    openssl::DigestAlgorithm::SHA256),
           network_thread([this]() { network_io_context.run(); }) {
               configure_ssl_context(ssl_context_id, 
-                    /*"/pollbook-server/build/apps/local-test-deployment/client0/client_cert.pem",
-                    "/pollbook-server/build/apps/local-test-deployment/client0/private_key.pem",
-                    "/pollbook-server/build/apps/local-test-deployment/client0/ca/ca_cert.pem");*/
+                    id_server_socket,
+                    Config::getString(Config::SECTION_SECURITY, Config::LOCAL_CERT),
+                    Config::getString(Config::SECTION_SECURITY, Config::LOCAL_PRIVATE_KEY),
+                    Config::getString(Config::SECTION_SECURITY, Config::CA_CERT));
+              configure_ssl_context(ssl_context_checkin, 
+                    checkin_server_socket,
                     Config::getString(Config::SECTION_SECURITY, Config::LOCAL_CERT),
                     Config::getString(Config::SECTION_SECURITY, Config::LOCAL_PRIVATE_KEY),
                     Config::getString(Config::SECTION_SECURITY, Config::CA_CERT));
@@ -57,17 +61,27 @@ void PollbookClient::connect() {
 }
 
 void PollbookClient::configure_ssl_context(asio::ssl::context& ssl_context, 
+                           asio::ssl::stream<asio::ip::tcp::socket>& socket,
                            const std::string& cert_file, 
                            const std::string& key_file, 
                            const std::string& ca_file) {
-    ssl_context.use_certificate_chain_file(cert_file);
-    ssl_context.use_private_key_file(key_file, asio::ssl::context::pem);
-    ssl_context.load_verify_file(ca_file);
+    /* ssl_context.use_certificate_chain_file(cert_file); */
+    /* ssl_context.use_private_key_file(key_file, asio::ssl::context::pem); */
     ssl_context.set_verify_mode(asio::ssl::verify_peer);
-    ssl_context.set_verify_callback(
-        [](bool preverified, asio::ssl::verify_context& ctx) -> bool {
-            return preverified;
-        });
+    ssl_context.load_verify_file(ca_file);
+    /* ssl_context.set_verify_callback( */
+    /*     [](bool preverified, asio::ssl::verify_context& ctx) -> bool { */
+    /*         return preverified; */
+    /*     }); */
+    SSL *ssl = socket.native_handle();
+    if (!SSL_use_certificate_file(ssl, cert_file.c_str(), SSL_FILETYPE_PEM)) {
+        // Handle error
+        std::cout << "Error in cert" << std::endl;
+    }
+    if (!SSL_use_PrivateKey_file(ssl, key_file.c_str(), SSL_FILETYPE_PEM)) {
+        // Handle error
+        std::cout << "Error in Pkey" << std::endl;
+    }
 }
 
 void PollbookClient::connect_checkin_server(const std::string& hostname, const std::string& port) {
@@ -114,7 +128,6 @@ void PollbookClient::make_handshake(const std::string& host, const std::string& 
             // Attempt to connect to an endpoint
             /* std::cout << "checkin break" << std::endl; */
             asio::connect(checkin_server_socket.lowest_layer(), endpoints);
-            std::cout << "breaking confirmed" << std::endl;
         
             // Perform the SSL handshake
             checkin_server_socket.handshake(asio::ssl::stream_base::client);

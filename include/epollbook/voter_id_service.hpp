@@ -77,6 +77,10 @@ private:
      */
     std::map<std::uint32_t, openssl::Verifier> client_verifiers;
     /**
+     * Gets client id from the certificate
+     */
+    std::uint32_t get_client_id_from_cert(X509* cert);
+    /**
      * Handler function for ASIO accept events.
      */
     void handle_accept(const asio::error_code& error, asio::ip::tcp::socket incoming_socket);
@@ -102,7 +106,10 @@ private:
      * already read the initial 4 bytes to determine the size of the message.
      */
     void start_payload_read(asio::ip::tcp::endpoint client_ip, std::size_t size_of_message);
-
+    /**
+     * saves public key into a folder
+     */
+    void save_pub_key(EVP_PKEY* pubkey, std::uint32_t client_id);
     /**
      * Handles a single ID-validation request from a client, assuming it has already
      * been read and deserialized in the "raw" read handler.
