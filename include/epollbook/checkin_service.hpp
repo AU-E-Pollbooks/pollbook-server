@@ -71,6 +71,10 @@ private:
      */
     std::map<std::uint32_t, std::pair<std::string, std::string>> client_tickets_map;
     /**
+     * A map between client id and client public key
+    */
+    std::map<std::uint32_t, openssl::EnvelopeKey> client_public_keys;
+    /**
      * The Signer object the server uses to sign messages, which is configured
      * with the service's signing key.
      */
@@ -156,6 +160,14 @@ private:
      * if it was not found in the expected location
      */
     bool load_client_public_key(std::uint32_t client_id);
+
+    /**
+     * Loads public keys from all .pem files found in the CLIENT_KEYS_FOLDER
+     * file path, then adds them to client_keys and client_verifiers maps
+     * 
+     * @return true If public keys were loaded successfully, false if none were found
+    */
+    bool load_client_public_keys()
 
 public:
     /**

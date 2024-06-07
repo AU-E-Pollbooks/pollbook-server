@@ -8,6 +8,7 @@
 
 #include <array>
 #include <iostream>
+#include <filesystem>
 
 namespace epollbook {
 
@@ -28,6 +29,7 @@ CheckinService::CheckinService()
     /* network_thread = std::thread([&] { */
     /*     network_io_context.run(); */
     /* }); */
+    load_client_public_keys();
     configure_ssl_context(ssl_context,
                       /*"/pollbook-server/build/apps/local-test-deployment/server1/id_cert.pem",
                       "/pollbook-server/build/apps/local-test-deployment/server1/private_key.pem", 
@@ -88,10 +90,33 @@ void CheckinService::handle_accept(const asio::error_code& error, asio::ip::tcp:
                         // Extract the public key from the certificate
                         EVP_PKEY* pubkey = X509_get_pubkey(clientCert);
                         if (pubkey != nullptr) {
-                            // Open a file to write the public key
-                            save_pub_key(pubkey, client_id);
-                            // Clean up
-                            EVP_PKEY_free(pubkey);
+                            //first, check if the client_id exists in the map
+                            auto foundID = client_public_keys.find(client_id);
+                            if(foundID != client_public_keys.end()) {
+                                //found the client id, so check if public key matches
+                                if(foundID->second != pubkey) {
+                                    //didn't match
+                                    std::cerr << "Public key doesn't match previous public key found for user" << std::endl;
+                                }
+                                //if it matched, just don't save the key
+                            }
+                            else {
+                                //didn't find client id, check for matches on public key
+                                for (auto it = client_public_keys.begin(); it != client_public_keys.end(); ++it) {
+                                    if(it->second == pubkey) {
+                                        //found matching public key, but non-matching client id
+                                        std::cerr << "Client ID doesn't match ID associated with public key" << std::endl;
+                                    }
+                                }
+                                //if it makes it here neither client id nor public key exist in the map,
+                                //so store as both file and in map
+                                client_public_keys.emplace(client_id, std::move(pubkey));
+                                // Open a file to write the public key
+                                save_pub_key(pubkey, client_id);
+                                // Clean up
+                                EVP_PKEY_free(pubkey);
+                            }
+                            
                         } else {
                             std::cerr << "Error extracting public key" << std::endl;
                         }
@@ -390,6 +415,30 @@ void CheckinService::load_voter_list(const std::string& csv_file_path) {
         std::uint32_t uid = std::stoul(uid_column_string);
         voter_status_table.emplace(uid, VoterStatus::ELIGIBLE);
     }
+}
+
+bool CheckinService::load_client_public_keys() {
+    std::stringstream key_folder_path_builder;
+    key_folder_path_builder << Config::getString(Config::SECTION_SECURITY, Config::CLIENT_KEYS_FOLDER) << "/"
+    std::string key_folder_path = key_folder_path_builder.str();
+    try{
+        for(const auto &entry : std::filesystem::directory_iterator(key_folder_path)) {
+            openssl::EnvelopeKey key = openssl::EnvelopeKey::from_pem_public(entry.path());
+            std::string key_file_name = entry.path().filename().string();
+            std::string key_file_no_ext = key_file_name.substr(0, key_file_name.find_last_of("."));
+            std::string prefix_to_remove = Config::getString(Config::SECTION_SECURITY, Config::CLIENT_KEY_FILE_PREFIX);
+            std::uint32_t client_id = std::stoul(key_file_no_ext.erase(key_file_no_ext.find(prefix_to_remove), prefix_to_remove.size()));
+
+            openssl::Verifier client_verifier(key, signature_digest_algorithm);
+            client_verifiers.emplace(client_id, std::move(client_verifier));
+
+            client_public_keys.emplace(client_id, std::move(key));
+        }
+    } catch(openssl::openssl_error& err) {
+        logger->error("Could not load public keys due to openssl error {}", err.what());
+        return false;
+    }
+    return true;
 }
 
 }  // namespace epollbook
