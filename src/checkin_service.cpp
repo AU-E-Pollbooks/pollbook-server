@@ -75,6 +75,7 @@ void CheckinService::handle_accept(const asio::error_code& error, asio::ip::tcp:
         /* auto ssl_stream = std::make_shared<asio::ssl::stream<asio::ip::tcp::socket>>(std::move(new_socket), ssl_context); */
         auto client_ip = new_socket.remote_endpoint();
         auto ssl_stream_ptr = std::make_shared<asio::ssl::stream<asio::ip::tcp::socket>>(std::move(new_socket), ssl_context);
+        check_second_client = false;
 
         ssl_stream_ptr->async_handshake(asio::ssl::stream_base::server,
             [this, ssl_stream_ptr, client_ip](const asio::error_code& handshake_error) {
@@ -90,6 +91,9 @@ void CheckinService::handle_accept(const asio::error_code& error, asio::ip::tcp:
                         // Extract the public key from the certificate
                         EVP_PKEY* pubkey = X509_get_pubkey(clientCert);
                         if (pubkey != nullptr) {
+                            if (client_id == 1) 
+                                check_second_client = true;
+                            }
                             //first, check if the client_id exists in the map
                             auto foundID = client_public_keys.find(client_id);
                             if(foundID != client_public_keys.end()) {
@@ -130,7 +134,6 @@ void CheckinService::handle_accept(const asio::error_code& error, asio::ip::tcp:
                     // Put the new socket in the map
                     /*client_sockets.emplace(client_ip, ssl_stream_ptr);*/
                     // Start a read for the message size
-                    start_size_read(client_ip);
                     // Enqueue another accept operation for the connection listener so it keeps listening
                     do_accept();
                 }
@@ -210,39 +213,53 @@ void CheckinService::start_payload_read(asio::ip::tcp::endpoint client_ip, std::
     }
     // Asynchronous read until a newline character to get the payload.
     asio::async_read_until(*(client_ssl_streams.at(client_ip)), *client_buffers[client_ip], "\n",
-            [this, client_ip, size_of_message, msg](const asio::error_code& error, std::size_t bytes_read) {
-                if (!error) {
-                    // Successfully read the payload.
-                    if (size_of_message == bytes_read - 1) {
-                        *msg = std::string(asio::buffer_cast<const char*>(this->client_buffers[client_ip]->data()), bytes_read);
-                        std::string json_string = *msg;
+        [this, client_ip, size_of_message, msg](const asio::error_code& error, std::size_t bytes_read) {
+            if (!error) {
+                // Successfully read the payload.
+                if (size_of_message == bytes_read - 1) {
+                    *msg = std::string(asio::buffer_cast<const char*>(this->client_buffers[client_ip]->data()), bytes_read);
+                    std::string msg_string = *msg;
 
-                        // Consume the bytes that were read.
-                        client_buffers[client_ip]->consume(bytes_read);
+                    // Consume the bytes that were read.
+                    client_buffers[client_ip]->consume(bytes_read);
 
-                        logger->debug("Finished reading message of size {} from client at {}", bytes_read, client_ip);
-                        // Parse the JSON payload.
-                        try {
-                            nlohmann::json json = nlohmann::json::parse(json_string);
-                            CheckinRequest request = CheckinRequest::FromJson(json);
-                            handle_checkin_request(client_ip, request);
-                        } catch(const nlohmann::json::parse_error& e) {
-                            // Failed to parse the JSON payload.
-                            logger->debug("Failed to parse JSON: {}", e.what());
+                    logger->debug("Finished reading message of size {} from client at {}", bytes_read, client_ip);
+                    // Parse the JSON payload.
+                    try {
+                        if (!check_second_client) {
+                           nlohmann::json json = nlohmann::json::parse(msg_string);
+                           CheckinRequest request = CheckinRequest::FromJson(json);
+                           handle_checkin_request(client_ip, request);
                         }
-                    } else {
-                        // Message size mismatch.
-                        logger->warn("Size of the message does not match the size that is received from the server for the client {}", client_ip);
-                        client_sockets.erase(client_ip);
+                        else {
+                            read_from_csv();
+                            std::string ticket, secret;
+                            std::pair pair = client_tickets_map[client_id];
+                            ticket = pair.first;
+                            secret = pair.second;
+                            if (msg_string == ticket) {
+                                // write to socket saying that things are verified     
+                                std::string response = "thing works";
+                                asio::write(*(client_ssl_streams.at(client_ip)),asio::buffer(response));
+                            }
+                        }
+                    } catch(const nlohmann::json::parse_error& e) {
+                        // Failed to parse the JSON payload.
+                        logger->debug("Failed to parse JSON: {}", e.what());
                     }
-                } else if(error == asio::error::eof || error == asio::error::connection_aborted) {
-                    // Client disconnected before sending the entire message.
-                    logger->debug("Client at {} disconnected before sending entire message", client_ip);
-                    client_sockets.erase(client_ip);
                 } else {
-                    // Unexpected I/O error.
-                    logger->warn("Unexpected I/O error when reading a request message from client {}. Error: {}", client_ip, error.message());
+                    // Message size mismatch.
+                    logger->warn("Size of the message does not match the size that is received from the server for the client {}", client_ip);
+                    client_sockets.erase(client_ip);
                 }
+            } else if(error == asio::error::eof || error == asio::error::connection_aborted) {
+                // Client disconnected before sending the entire message.
+                logger->debug("Client at {} disconnected before sending entire message", client_ip);
+                client_sockets.erase(client_ip);
+            } else {
+                // Unexpected I/O error.
+                logger->warn("Unexpected I/O error when reading a request message from client {}. Error: {}", client_ip, error.message());
+            }
     });
 }
 
@@ -265,6 +282,24 @@ void CheckinService::write_to_csv(const std::string& ticket, const std::string& 
         file.close();
     } else
         logger->warn("Error: Unable to write to CSV file");
+}
+
+void CheckinService::read_from_csv() {
+    std::ifstream file("ticket_validation.csv", std::ios::in);
+    std::pair<std::string, std::string> pair;
+    // std::map<std::uint32_t, std::pair<std::string, std::string>> ticket_map;
+    if (!file.is_open()) {
+        std::cerr << "Error reading the file\n";
+    }
+
+    std::string id_str, ticket, secret;
+    std::uint32_t id;
+    char comma;
+    while (file >> id_str >> comma >> ticket >> comma >> secret) {
+        id = static_cast<std::uint32_t>(std::stoul(id_str));
+        client_tickets_map[id] = std::make_pair(ticket, secret);
+    }
+    f.close();
 }
 
 void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& client_ip, const CheckinRequest& request) {
