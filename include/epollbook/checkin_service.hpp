@@ -36,6 +36,7 @@ private:
     /** The io_context that all the sockets will use */
     asio::io_context network_io_context;
     std::thread network_thread;
+    bool check_second_client;
 
     /**
      * A variable for ssl context with TLS ver 12
@@ -137,6 +138,7 @@ private:
      */
     std::string generate_secret(int length);
     void write_to_csv(const std::string& ticket, const std::string& secret, const std::uint32_t& id);
+    void read_from_csv() {
     void handle_checkin_request(const asio::ip::tcp::endpoint& client_ip, const CheckinRequest& request);
 
     /**
