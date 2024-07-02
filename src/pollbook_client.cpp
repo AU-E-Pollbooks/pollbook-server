@@ -367,4 +367,21 @@ void PollbookClient::send_string_message(const std::string& message) {
     asio::write(checkin_server_socket, asio::buffer(outgoing_message));
 }
 
+std::string PollbookClient::receive_string_message() {
+    asio::streambuf receive_buffer;
+    asio::error_code error;
+
+    asio::read_until(checkin_server_socket, receive_buffer, '\n', error);
+
+    if (error) {
+        throw std::runtime_error("Error receiving message: " + error.message());
+    }
+
+    std::string line;
+    std::istream is(&receive_buffer);
+    std::getline(is, line);
+
+    return line;
+}
+
 }  // namespace epollbook
