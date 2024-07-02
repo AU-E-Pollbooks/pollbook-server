@@ -194,6 +194,7 @@ public:
      * synchronous method.
      */
     void send_string_message(const std::string& message);
+    std::string receive_string_message();
 };
 
 }  // namespace epollbook
