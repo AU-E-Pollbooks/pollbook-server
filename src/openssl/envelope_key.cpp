@@ -23,6 +23,13 @@ EnvelopeKey& EnvelopeKey::operator=(EnvelopeKey&& other) {
     return *this;
 }
 
+bool operator== (EnvelopeKey& lhs, EnvelopeKey& rhs) {
+    if(lhs.key.get() == rhs.key.get()) {
+        return true;
+    }
+    return false;
+}
+
 int EnvelopeKey::get_max_size() {
     return EVP_PKEY_size(key.get());
 }

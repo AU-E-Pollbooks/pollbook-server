@@ -167,7 +167,7 @@ private:
      * 
      * @return true If public keys were loaded successfully, false if none were found
     */
-    bool load_client_public_keys()
+    bool load_client_public_keys();
 
 public:
     /**
