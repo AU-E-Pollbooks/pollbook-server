@@ -67,6 +67,10 @@ public:
      */
     EnvelopeKey& operator=(EnvelopeKey&& other);
     /**
+     * Comparison operator.
+     */
+    friend bool operator==(EnvelopeKey& lhs, EnvelopeKey& rhs);
+    /**
      * @return the "maximum output size" (in bytes) reported by this key. For
      * RSA private keys, this is the exact size of every signature and can be
      * used as the size of signature buffers.

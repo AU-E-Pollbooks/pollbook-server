@@ -419,7 +419,7 @@ void CheckinService::load_voter_list(const std::string& csv_file_path) {
 
 bool CheckinService::load_client_public_keys() {
     std::stringstream key_folder_path_builder;
-    key_folder_path_builder << Config::getString(Config::SECTION_SECURITY, Config::CLIENT_KEYS_FOLDER) << "/"
+    key_folder_path_builder << Config::getString(Config::SECTION_SECURITY, Config::CLIENT_KEYS_FOLDER) << "/";
     std::string key_folder_path = key_folder_path_builder.str();
     try{
         for(const auto &entry : std::filesystem::directory_iterator(key_folder_path)) {
