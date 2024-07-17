@@ -9,6 +9,7 @@
 #include <asio/ssl/context.hpp>
 #include <iostream>
 
+#include <shared_mutex>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -19,6 +20,20 @@ namespace epollbook {
 enum class VoterStatus {
     ELIGIBLE,
     CHECKED_IN
+};
+
+enum class ClientType {
+    UntrustedClient,
+    TrustedClient
+};
+
+class ClientInfo {
+public:
+    uint32_t id;
+    ClientType type;
+    ClientInfo() : id(0), type(ClientType::UntrustedClient) {}
+
+    ClientInfo(const uint32_t& id, ClientType type) : id(id), type(type) {}
 };
 
 class CheckinService {
@@ -36,8 +51,9 @@ private:
     /** The io_context that all the sockets will use */
     asio::io_context network_io_context;
     std::thread network_thread;
-    bool check_second_client;
-
+    // bool check_second_client;
+    std::map<uint32_t, ClientInfo> clients;
+    std::shared_mutex client_mutex;
     /**
      * A variable for ssl context with TLS ver 12
     */
@@ -70,7 +86,7 @@ private:
     /* 
      * A map between client id and client's tickets and local secrets 
      */
-    std::map<std::uint32_t, std::pair<std::string, std::string>> client_tickets_map;
+    std::map<std::string, std::pair<std::uint32_t, std::string>> client_tickets_map;
     /**
      * A map between client id and client public key
     */
@@ -91,6 +107,8 @@ private:
      * Gets client id from the certificate
      */
     std::uint32_t get_client_id_from_cert(X509* cert);
+    std::uint32_t client_id;
+    std::map<asio::ip::tcp::endpoint, uint32_t> client_id_map;
     /**
      * saves public key into a folder
      */
@@ -138,7 +156,7 @@ private:
      */
     std::string generate_secret(int length);
     void write_to_csv(const std::string& ticket, const std::string& secret, const std::uint32_t& id);
-    void read_from_csv() {
+    void read_from_csv(); 
     void handle_checkin_request(const asio::ip::tcp::endpoint& client_ip, const CheckinRequest& request);
 
     /**
@@ -170,6 +188,11 @@ private:
      * @return true If public keys were loaded successfully, false if none were found
     */
     bool load_client_public_keys();
+    /**
+     * adds a client to the the clients map
+    */
+    void add_client(uint32_t client_id, ClientType type);
+    // void remove_client(uint32_t client_id);
 
 public:
     /**
