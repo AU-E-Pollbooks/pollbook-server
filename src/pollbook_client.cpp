@@ -253,7 +253,7 @@ void PollbookClient::start_checkin_request_write(const VerifiedVoterID& verified
     private_key_signer.init();
     private_key_signer.add_bytes(request_body_str.data(), request_body_str.size());
     // Construct the message, with the signature at the end
-    CheckinRequest request(std::move(request_body), Client::FirstClient, private_key_signer.finalize());
+    CheckinRequest request(std::move(request_body), private_key_signer.finalize());
 
     // Serialize and send the message 
     nlohmann::json request_json = CheckinRequest::ToJson(request);
@@ -372,6 +372,7 @@ std::string PollbookClient::receive_string_message() {
     asio::error_code error;
 
     asio::read_until(checkin_server_socket, receive_buffer, '\n', error);
+    logger->debug("reading works");
 
     if (error) {
         throw std::runtime_error("Error receiving message: " + error.message());

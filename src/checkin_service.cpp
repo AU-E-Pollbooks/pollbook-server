@@ -2,6 +2,7 @@
 #include "epollbook/config/config.hpp"
 #include "epollbook/log_utils.hpp"
 
+#include <shared_mutex>
 #include <fstream>
 #include <asio.hpp>
 #include <openssl/rand.h>
@@ -49,10 +50,10 @@ CheckinService::~CheckinService() {
 
 void CheckinService::do_accept() {
     connection_listener.async_accept(
-            network_io_context,
-            [this](const asio::error_code& error, asio::ip::tcp::socket peer) {
-                handle_accept(error, std::move(peer));
-            });
+        network_io_context,
+        [this](const asio::error_code& error, asio::ip::tcp::socket peer) {
+            handle_accept(error, std::move(peer));
+        });
 }
 
 void CheckinService::save_pub_key(EVP_PKEY* pubkey, std::uint32_t client_id) {
@@ -75,7 +76,6 @@ void CheckinService::handle_accept(const asio::error_code& error, asio::ip::tcp:
         /* auto ssl_stream = std::make_shared<asio::ssl::stream<asio::ip::tcp::socket>>(std::move(new_socket), ssl_context); */
         auto client_ip = new_socket.remote_endpoint();
         auto ssl_stream_ptr = std::make_shared<asio::ssl::stream<asio::ip::tcp::socket>>(std::move(new_socket), ssl_context);
-        check_second_client = false;
 
         ssl_stream_ptr->async_handshake(asio::ssl::stream_base::server,
             [this, ssl_stream_ptr, client_ip](const asio::error_code& handshake_error) {
@@ -87,13 +87,16 @@ void CheckinService::handle_accept(const asio::error_code& error, asio::ip::tcp:
                     X509* clientCert = SSL_get0_peer_certificate(ssl_stream_ptr->native_handle());
 
                     if (clientCert != nullptr) {
-                        std::uint32_t client_id = get_client_id_from_cert(clientCert);
+                        uint32_t client_id = get_client_id_from_cert(clientCert);
+                        {
+                            std::unique_lock<std::shared_mutex> lock(client_mutex);
+                            client_id_map[client_ip] = client_id;
+                        }
                         // Extract the public key from the certificate
+                        // check_second_client = (client_id == 1);
+                        
                         EVP_PKEY* pubkey = X509_get_pubkey(clientCert);
                         if (pubkey != nullptr) {
-                            if (client_id == 1) 
-                                check_second_client = true;
-                            }
                             //first, check if the client_id exists in the map
                             auto foundID = client_public_keys.find(client_id);
                             if(foundID != client_public_keys.end()) {
@@ -103,6 +106,12 @@ void CheckinService::handle_accept(const asio::error_code& error, asio::ip::tcp:
                                     std::cerr << "Public key doesn't match previous public key found for user" << std::endl;
                                 }
                                 //if it matched, just don't save the key
+                                if (client_id == 1) {
+                                    add_client(client_id, ClientType::TrustedClient);
+                                    logger->debug("adding client works");
+                                } else {
+                                    add_client(client_id, ClientType::UntrustedClient); 
+                                }
                             }
                             else {
                                 //didn't find client id, check for matches on public key
@@ -134,6 +143,7 @@ void CheckinService::handle_accept(const asio::error_code& error, asio::ip::tcp:
                     // Put the new socket in the map
                     /*client_sockets.emplace(client_ip, ssl_stream_ptr);*/
                     // Start a read for the message size
+                    start_size_read(client_ip);
                     // Enqueue another accept operation for the connection listener so it keeps listening
                     do_accept();
                 }
@@ -213,53 +223,89 @@ void CheckinService::start_payload_read(asio::ip::tcp::endpoint client_ip, std::
     }
     // Asynchronous read until a newline character to get the payload.
     asio::async_read_until(*(client_ssl_streams.at(client_ip)), *client_buffers[client_ip], "\n",
-        [this, client_ip, size_of_message, msg](const asio::error_code& error, std::size_t bytes_read) {
-            if (!error) {
-                // Successfully read the payload.
-                if (size_of_message == bytes_read - 1) {
-                    *msg = std::string(asio::buffer_cast<const char*>(this->client_buffers[client_ip]->data()), bytes_read);
-                    std::string msg_string = *msg;
+            [this, client_ip, size_of_message, msg](const asio::error_code& error, std::size_t bytes_read) {
+                if (!error) {
+                    // Successfully read t he payload.
+                    if (size_of_message == bytes_read - 1) {
+                        *msg = std::string(asio::buffer_cast<const char*>(this->client_buffers[client_ip]->data()), bytes_read);
+                        std::string msg_string = *msg;
 
-                    // Consume the bytes that were read.
-                    client_buffers[client_ip]->consume(bytes_read);
+                        // Consume the bytes that were read.
+                        client_buffers[client_ip]->consume(bytes_read);
 
-                    logger->debug("Finished reading message of size {} from client at {}", bytes_read, client_ip);
-                    // Parse the JSON payload.
-                    try {
-                        if (!check_second_client) {
-                           nlohmann::json json = nlohmann::json::parse(msg_string);
-                           CheckinRequest request = CheckinRequest::FromJson(json);
-                           handle_checkin_request(client_ip, request);
+                        // std::lock_guard<std::mutex> lock(mutex);
+                        
+                        ClientType type;
+                        {
+                            std::shared_lock<std::shared_mutex> lock(client_mutex);
+                            auto it = client_id_map.find(client_ip);
+                            if (it == client_id_map.end()) {
+                                logger->warn("Unknown client IP");
+                                return;
+                            }
+                            client_id = it->second;
+                            auto client_it = clients.find(client_id);
+                            if (client_it == clients.end()) {
+                                logger->warn("Unknown client ID");
+                                return;
+                            }
+                            type = client_it->second.type;
                         }
-                        else {
-                            read_from_csv();
-                            std::string ticket, secret;
-                            std::pair pair = client_tickets_map[client_id];
-                            ticket = pair.first;
-                            secret = pair.second;
-                            if (msg_string == ticket) {
-                                // write to socket saying that things are verified     
-                                std::string response = "thing works";
-                                asio::write(*(client_ssl_streams.at(client_ip)),asio::buffer(response));
+                        switch (type) {
+                            case ClientType::TrustedClient: {
+                                std::cout << "Right case\n";
+                                read_from_csv();
+                                std::cout << "Read CSV\n";
+                                std::string ticket, secret;
+                                std::uint32_t id;
+                                // std::pair pair = client_tickets_map[client_id];
+                                if (client_tickets_map.find(msg_string) == client_tickets_map.end()) {
+                                    std::pair pair = client_tickets_map[msg_string];
+                                    id = pair.first;
+                                    secret = pair.second;
+                                    std::string response = "thing works";
+                                    asio::write(*(client_ssl_streams.at(client_ip)),asio::buffer(response));
+                                }
+                                // logger->debug(msg_string);
+                                // logger->debug(pair.first);
+                                // if (msg_string == pair.second) {
+                                //     // write to socket saying that things are verified     
+                                //     std::string response = "thing works";
+                                //     asio::write(*(client_ssl_streams.at(client_ip)),asio::buffer(response));
+                                // }
+                                else 
+                                    logger->debug("did not work");
+                                break;
+                            }
+                            case ClientType::UntrustedClient: {
+                                try {
+                                    // Parse the JSON payload.
+                                    std::cout << "works\n";
+                                    nlohmann::json json = nlohmann::json::parse(msg_string);
+                                    CheckinRequest request = CheckinRequest::FromJson(json);
+                                    handle_checkin_request(client_ip, request);
+                                } catch(const nlohmann::json::parse_error& e) {
+                                    // Failed to parse the JSON payload.
+                                    std::cout << "issues\n";
+                                    logger->debug("Failed to parse JSON: {}", e.what());
+                                }
+                                break;
                             }
                         }
-                    } catch(const nlohmann::json::parse_error& e) {
-                        // Failed to parse the JSON payload.
-                        logger->debug("Failed to parse JSON: {}", e.what());
+                        logger->debug("Finished reading message of size {} from client at {}", bytes_read, client_ip);
+                    } else {
+                        // Message size mismatch.
+                        logger->warn("Size of the message does not match the size that is received from the server for the client {}", client_ip);
+                        client_sockets.erase(client_ip);
                     }
-                } else {
-                    // Message size mismatch.
-                    logger->warn("Size of the message does not match the size that is received from the server for the client {}", client_ip);
+                } else if(error == asio::error::eof || error == asio::error::connection_aborted) {
+                    // Client disconnected before sending the entire message.
+                    logger->debug("Client at {} disconnected before sending entire message", client_ip);
                     client_sockets.erase(client_ip);
+                } else {
+                    // Unexpected I/O error.
+                    logger->warn("Unexpected I/O error when reading a request message from client {}. Error: {}", client_ip, error.message());
                 }
-            } else if(error == asio::error::eof || error == asio::error::connection_aborted) {
-                // Client disconnected before sending the entire message.
-                logger->debug("Client at {} disconnected before sending entire message", client_ip);
-                client_sockets.erase(client_ip);
-            } else {
-                // Unexpected I/O error.
-                logger->warn("Unexpected I/O error when reading a request message from client {}. Error: {}", client_ip, error.message());
-            }
     });
 }
 
@@ -275,31 +321,61 @@ std::string CheckinService::generate_secret(int length) {
     return ss.str();
 }
 
+void CheckinService::read_from_csv() {
+    std::ifstream file("ticket_validation.csv", std::ios::in);
+    if (!file.is_open()) {
+        std::cerr << "Error opening the file\n";
+        return;
+    }
+
+    std::string line;
+    while (std::getline(file, line)) {
+        std::istringstream iss(line);
+        std::string id_str, ticket, secret;
+
+        if (std::getline(iss, ticket, ',') && 
+            std::getline(iss, id_str, ',') && 
+            std::getline(iss, secret)) {
+            
+            try {
+                std::uint32_t id = static_cast<std::uint32_t>(std::stoul(id_str));
+                client_tickets_map[ticket] = std::make_pair(id, secret);
+            } catch (const std::invalid_argument& e) {
+                std::cerr << "Invalid ID format: " << id_str << std::endl;
+            } catch (const std::out_of_range& e) {
+                std::cerr << "ID out of range: " << id_str << std::endl;
+            }
+        } else {
+            std::cerr << "Invalid line format: " << line << std::endl;
+        }
+    }
+
+
+
+    // std::ifstream file("ticket_validation.csv", std::ios::in);
+    // std::pair<std::string, std::string> pair;
+    // // std::map<std::uint32_t, std::pair<std::string, std::string>> ticket_map;
+    // if (!file.is_open()) {
+    //     std::cerr << "Error reading the file\n";
+    // }
+    //
+    // std::string id_str, ticket, secret;
+    // std::uint32_t id;
+    // char comma;
+    // while (file >> id_str >> comma >> ticket >> comma >> secret) {
+    //     id = static_cast<std::uint32_t>(std::stoul(id_str));
+    //     client_tickets_map[id] = std::make_pair(ticket, secret);
+    // }
+    // file.close();
+}
+
 void CheckinService::write_to_csv(const std::string& ticket, const std::string& secret, const std::uint32_t& id) {
     std::ofstream file("ticket_validation.csv", std::ios::app);
     if (file.is_open()) {
-        file << ticket << "," << secret << "," << id << std::endl;
+        file << ticket << "," << id << "," << secret << std::endl;
         file.close();
     } else
         logger->warn("Error: Unable to write to CSV file");
-}
-
-void CheckinService::read_from_csv() {
-    std::ifstream file("ticket_validation.csv", std::ios::in);
-    std::pair<std::string, std::string> pair;
-    // std::map<std::uint32_t, std::pair<std::string, std::string>> ticket_map;
-    if (!file.is_open()) {
-        std::cerr << "Error reading the file\n";
-    }
-
-    std::string id_str, ticket, secret;
-    std::uint32_t id;
-    char comma;
-    while (file >> id_str >> comma >> ticket >> comma >> secret) {
-        id = static_cast<std::uint32_t>(std::stoul(id_str));
-        client_tickets_map[id] = std::make_pair(ticket, secret);
-    }
-    f.close();
 }
 
 void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& client_ip, const CheckinRequest& request) {
@@ -344,7 +420,7 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
     if (accept) {
         ticket = generate_secret(16);
         secret = generate_secret(32);
-        client_tickets_map[request.body.voter_unique_id] = std::make_pair(ticket, secret);
+        client_tickets_map[ticket] = std::make_pair(request.body.voter_unique_id, secret);
         write_to_csv(ticket, secret, request.body.voter_unique_id);
     } else {
         ticket = "";
@@ -355,8 +431,8 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
     signer.init();
     signer.add_bytes(response_body_str.data(), response_body_str.size());
     // Serialize and send the response message, including the signature
-    Client client_type = Client::FirstClient;
-    CheckinResponse response(std::move(response_body), signer.finalize(), client_type, ticket);
+    // Client ClientType = Client::FirstClient;
+    CheckinResponse response(std::move(response_body), signer.finalize(), ticket);
  
     // convert response into json and convert it into a string
     nlohmann::json response_json = CheckinResponse::ToJson(response);
@@ -475,5 +551,11 @@ bool CheckinService::load_client_public_keys() {
     }
     return true;
 }
+
+void CheckinService::add_client(uint32_t client_id, ClientType type) {
+    std::unique_lock<std::shared_mutex> lock(client_mutex);
+    clients[client_id] = ClientInfo(client_id, type);
+}
+
 
 }  // namespace epollbook

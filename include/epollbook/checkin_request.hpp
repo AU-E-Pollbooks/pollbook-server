@@ -9,28 +9,24 @@
 #include "openssl/base64.hpp"
 
 
-enum class Client {
-    FirstClient,
-    SecondClient
-};
-namespace nlohmann {
-    inline void to_json(json& j, const Client& client) {
-        switch (client) {
-            case Client::FirstClient: j = "FirstClient"; break;
-            case Client::SecondClient: j = "SecondClient"; break;
-        }
-    }
-
-    inline void from_json(const json& j, Client& client) {
-        std::string s = j.get<std::string>();
-        if (s == "FirstClient") 
-            client = Client::FirstClient;
-        else if (s == "SecondClient") 
-            client = Client::SecondClient;
-        else 
-            throw std::runtime_error("Invalid client type");
-    }
-}
+// namespace nlohmann {
+//     inline void to_json(json& j, const Client& client) {
+//         switch (client) {
+//             case Client::FirstClient: j = "FirstClient"; break;
+//             case Client::SecondClient: j = "SecondClient"; break;
+//         }
+//     }
+//
+//     inline void from_json(const json& j, Client& client) {
+//         std::string s = j.get<std::string>();
+//         if (s == "FirstClient") 
+//             client = Client::FirstClient;
+//         else if (s == "SecondClient") 
+//             client = Client::SecondClient;
+//         else 
+//             throw std::runtime_error("Invalid client type");
+//     }
+// }
 
 namespace epollbook {
 
@@ -109,21 +105,17 @@ struct CheckinRequest {
     /**
      * A signature on this message using the client's public key.
      */
-    Client client_type;
     std::vector<std::uint8_t> client_signature;
 
     CheckinRequest(const Body& message_body,
-                   const Client& client_type,
                    const std::vector<std::uint8_t>& client_signature)
             : body(message_body),
-              client_type(client_type),
               client_signature(client_signature) {}
 
     /* DEFAULT_SERIALIZATION_SUPPORT(CheckinRequest, body, client_signature); */
     static nlohmann::json ToJson(const CheckinRequest& request) {
         nlohmann::json json;
         json["body"] = CheckinRequest::Body::ToJson(request.body);
-        json["client_type"] = request.client_type;
         std::string signature_base64 = Base64::encode(request.client_signature.data(), request.client_signature.size());
         json["client_signature"] = signature_base64;
         return json;
@@ -140,7 +132,7 @@ struct CheckinRequest {
                 VerifiedVoterID::FromJson(json["body"]["verified_id_message"]));
 
         std::vector<std::uint8_t> client_signature = Base64::decode(json["client_signature"]);
-        CheckinRequest request(std::move(request_body), json["client_type"], client_signature);
+        CheckinRequest request(std::move(request_body), client_signature);
 
         return request;
     }
@@ -212,7 +204,6 @@ struct CheckinResponse {
      * A signature on this message using the check-in service's public key.
      */
     std::vector<std::uint8_t> checkin_service_signature;
-    Client client_type;
     /**
      * Randomly generated nonce that is sent after validation 
      */
@@ -220,11 +211,9 @@ struct CheckinResponse {
 
     CheckinResponse(const Body& message_body,
                     const std::vector<std::uint8_t>& checkin_service_signature,
-                    const Client& client_type,
                     const std::string& client_ticket)
             : body(message_body),
               checkin_service_signature(checkin_service_signature),
-              client_type(client_type),
               ticket(client_ticket) {}
 
     // Functions to convert json to a response and vice versa
@@ -233,7 +222,6 @@ struct CheckinResponse {
         std::string signature_base64 = Base64::encode(response.checkin_service_signature.data(), response.checkin_service_signature.size());
         json["body"] = CheckinResponse::Body::ToJson(response.body);
         json["checkin_service_signature"] = signature_base64;
-        json["client_type"] = response.client_type;
         json["ticket"] = response.ticket;
         return json;
     }
@@ -249,7 +237,7 @@ struct CheckinResponse {
                 json["body"]["voter_unique_id"]);
 
         std::vector<std::uint8_t> service_signature = Base64::decode(json["checkin_service_signature"]);
-        CheckinResponse response(std::move(response_body), service_signature, json["client_type"], json["ticket"]);
+        CheckinResponse response(std::move(response_body), service_signature, json["ticket"]);
 
         return response;
     }
