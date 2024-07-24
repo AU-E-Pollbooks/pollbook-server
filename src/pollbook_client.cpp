@@ -359,12 +359,8 @@ void PollbookClient::send_string_message(const std::string& message) {
     j["ticket"] = std::string(message);
     std::size_t message_size = message.size();
     std::string outgoing_message = std::to_string(message_size) + "\n" + message + "\n";
-    // Message format: Length of the message in bytes, then body of the message
-    /* std::vector<uint8_t> outgoing_message_buffer(sizeof(std::size_t) + message.size()); */
-    /* std::size_t message_size = message.size(); */
-    /* std::memcpy(outgoing_message_buffer.data(), &message_size, sizeof(message_size)); */
-    /* std::memcpy(outgoing_message_buffer.data() + sizeof(message_size), message.data(), message_size); */
     asio::write(checkin_server_socket, asio::buffer(outgoing_message));
+    // asio::async_read_until(checkin_server_socket, );
 }
 
 std::string PollbookClient::receive_string_message() {
@@ -381,6 +377,7 @@ std::string PollbookClient::receive_string_message() {
     std::string line;
     std::istream is(&receive_buffer);
     std::getline(is, line);
+    std::cout << line;
 
     return line;
 }

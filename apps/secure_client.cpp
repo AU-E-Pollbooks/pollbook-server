@@ -45,5 +45,6 @@ int main(int argc, char** argv) {
     //Send ticket to checkin server to fully check in voter
     client.send_string_message(ticket);
     std::string response = client.receive_string_message();
+    std::cout << "Response read\n";
     std::cout << "Server response: " << response << std::endl;
 }
