@@ -253,26 +253,21 @@ void CheckinService::start_payload_read(asio::ip::tcp::endpoint client_ip, std::
                         }
                         switch (type) {
                             case ClientType::TrustedClient: {
-                                std::cout << "Right case\n";
                                 read_from_csv();
-                                std::cout << "Read CSV\n";
                                 std::string ticket, secret;
                                 std::uint32_t id;
                                 // std::pair pair = client_tickets_map[client_id];
-                                if (client_tickets_map.find(msg_string) == client_tickets_map.end()) {
+                                // std::cout << client_tickets_map[msg_string].second;
+                                msg_string.erase(std::remove(msg_string.begin(), msg_string.end(), '\n'), 
+                                                 msg_string.cend());
+                                if (client_tickets_map.find(msg_string) != client_tickets_map.end()) {
                                     std::pair pair = client_tickets_map[msg_string];
                                     id = pair.first;
                                     secret = pair.second;
                                     std::string response = "thing works";
                                     asio::write(*(client_ssl_streams.at(client_ip)),asio::buffer(response));
+                                    logger->debug("Sent message to Client");
                                 }
-                                // logger->debug(msg_string);
-                                // logger->debug(pair.first);
-                                // if (msg_string == pair.second) {
-                                //     // write to socket saying that things are verified     
-                                //     std::string response = "thing works";
-                                //     asio::write(*(client_ssl_streams.at(client_ip)),asio::buffer(response));
-                                // }
                                 else 
                                     logger->debug("did not work");
                                 break;
@@ -280,19 +275,17 @@ void CheckinService::start_payload_read(asio::ip::tcp::endpoint client_ip, std::
                             case ClientType::UntrustedClient: {
                                 try {
                                     // Parse the JSON payload.
-                                    std::cout << "works\n";
                                     nlohmann::json json = nlohmann::json::parse(msg_string);
                                     CheckinRequest request = CheckinRequest::FromJson(json);
+                                    logger->debug("Finished reading message of size {} from client at {}", bytes_read, client_ip);
                                     handle_checkin_request(client_ip, request);
                                 } catch(const nlohmann::json::parse_error& e) {
                                     // Failed to parse the JSON payload.
-                                    std::cout << "issues\n";
                                     logger->debug("Failed to parse JSON: {}", e.what());
                                 }
                                 break;
                             }
                         }
-                        logger->debug("Finished reading message of size {} from client at {}", bytes_read, client_ip);
                     } else {
                         // Message size mismatch.
                         logger->warn("Size of the message does not match the size that is received from the server for the client {}", client_ip);
@@ -411,10 +404,6 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
     // Sign the body of the response message with the service's key
     std::string response_body_str = CheckinResponse::Body::ToJson(response_body).dump();
 
-    /* uuid_t uuid; */
-    /* chat uuid_str; */
-    /* uuid_generate(uuid); */
-    /* uuid_unparse(uuid, uuid_str); */
     std::string ticket;
     std::string secret;
     if (accept) {
@@ -431,7 +420,6 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
     signer.init();
     signer.add_bytes(response_body_str.data(), response_body_str.size());
     // Serialize and send the response message, including the signature
-    // Client ClientType = Client::FirstClient;
     CheckinResponse response(std::move(response_body), signer.finalize(), ticket);
  
     // convert response into json and convert it into a string
