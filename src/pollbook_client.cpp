@@ -3,6 +3,7 @@
 #include "epollbook/config/config.hpp"
 #include "epollbook/openssl/signature.hpp"
 #include "epollbook/voter_id_request.hpp"
+#include "epollbook/trusted_client_request.hpp"
 
 #include <asio.hpp>
 #include <asio/ssl.hpp>
@@ -349,6 +350,79 @@ std::future<CheckinResult> PollbookClient::check_in_voter(const std::string& fir
     start_id_request_write(current_timestamp, voter_id_data);
     // Return a future that the caller can use to wait for the process to finish
     return current_request_promise.get_future();
+}
+
+std::future<CheckinResult> PollbookClient::verify_ticket(const std::string& first_name, const std::string& middle_name,
+                                                         const std::string& last_name, const uint32_t voter_id,
+                                                         const std::string& ticket) {
+    if(!checkin_connected) {
+        throw std::runtime_error("Client must be connected before calling check_in_voter!");
+    }
+    // Reset the promise-future pair for the current request
+    current_request_promise = std::promise<CheckinResult>();
+
+    TicketRequest request(voter_id, ticket);
+    nlohmann::json request_json = TicketRequest::ToJson(request);
+    std::string message = request_json.dump();
+    logger->debug(message);
+    // Prepare the message
+    // nlohmann::json j;
+    // j["ticket"] = ticket;
+    // std::string message = j.dump();
+    
+    std::size_t message_size = message.size();
+    // std::string outgoing_message = std::to_string(message_size) + "\n" + message + "\n";
+    std::string outgoing_message = std::to_string(message_size) + "\n" + message + "\n";
+
+    // Send the message asynchronously
+    asio::async_write(checkin_server_socket, asio::buffer(outgoing_message),
+        [this](const asio::error_code& error, std::size_t /*bytes_transferred*/) {
+            if (!error) {
+                logger->debug("Sent verify_ticket request to check-in service.");
+                start_verify_ticket_response_read();
+            } else {
+                logger->error("Error writing the verify_ticket request to the check-in service! Error: {}", error.message());
+                current_request_promise.set_value({false, "Network error: I/O error when sending a verify_ticket request to the check-in service"});
+            }
+        });
+
+    // Return a future that the caller can use to wait for the process to finish
+    return current_request_promise.get_future();
+}
+
+void PollbookClient::start_verify_ticket_response_read() {
+    auto buf = std::make_shared<asio::streambuf>();
+    
+    asio::async_read_until(checkin_server_socket, *buf, "\n",
+        [this, buf](const asio::error_code& error, std::size_t bytes_read) {
+            if (!error) {
+                std::string response_str(asio::buffer_cast<const char*>(buf->data()), bytes_read);
+                buf->consume(bytes_read);
+                
+                try {
+                    std::string first_name, middle_name, last_name;
+                    nlohmann::json response_json = nlohmann::json::parse(response_str);
+                    bool is_valid = response_json["approved"];
+                    std::string secret = response_json["secret"];
+                    first_name = response_json["first_name"];
+                    middle_name = response_json["middle_name"];
+                    last_name = response_json["last_name"];
+
+                    if (is_valid) {
+                        logger->debug("Voter verified. Hello {} {} {}! Secret: {}", first_name, middle_name, last_name, secret);
+                        current_request_promise.set_value({true, secret});
+                    } else {
+                        current_request_promise.set_value({false, secret});
+                    }
+                } catch (const std::exception& e) {
+                    logger->error("Error parsing verify_ticket response: {}", e.what());
+                    current_request_promise.set_value({false, "Error parsing server response"});
+                }
+            } else {
+                logger->error("Error reading verify_ticket response: {}", error.message());
+                current_request_promise.set_value({false, "Network error: I/O error when reading verify_ticket response from the check-in service"});
+            }
+        });
 }
 
 void PollbookClient::send_string_message(const std::string& message) {
