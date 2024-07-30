@@ -22,6 +22,11 @@ struct CheckinResult {
     std::string failure_reason;
 };
 
+enum class ClientType {
+    UntrustedClient,
+    TrustedClient
+};
+
 class PollbookClient {
 private:
     /** A pointer to the debug logger */
@@ -43,6 +48,7 @@ private:
      * True if the client has been connected to a check-in server, false if
      * connect_checkin_server() has not yet been called.
      */
+    ClientType client_type;
     bool checkin_connected;
     /**
      * True if the client has been connected to an ID-verification server, false
@@ -189,6 +195,25 @@ public:
     std::future<CheckinResult> check_in_voter(const std::string& first_name, const std::string& middle_name,
                                               const std::string& last_name, const std::vector<std::uint8_t>& voter_id_data);
 
+    /**
+     * Starts the process to initiate verrification of voters existance
+     * and verify the ticket that it sends to untrusted client.
+     *
+     *
+     * @param first_name The voter's first name
+     * @param middle_name The voter's middle name
+     * @param last_name The voter's last name
+     * @param voter_id_data A byte array containing a representation of the
+     * voter's identification (e.g. an image of a state ID).
+     * @param ticket The ticket sent to untrusted client from checkin server
+     * @return A future for the CheckinResult object that contains the result of
+     * the check-in request. The future will be fulfilled when the check-in
+     * service responds to the request.
+     */
+    std::future<CheckinResult> verify_ticket(const std::string& first_name, const std::string& middle_name,
+                                             const std::string& last_name, const std::uint32_t voter_id,
+                                             const std::string& ticket);
+    void start_verify_ticket_response_read();
     /**
      * A simple demo method that sends a string to the server. This is a blocking,
      * synchronous method.

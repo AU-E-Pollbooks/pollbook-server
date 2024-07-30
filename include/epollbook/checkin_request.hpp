@@ -8,26 +8,6 @@
 #include <vector>
 #include "openssl/base64.hpp"
 
-
-// namespace nlohmann {
-//     inline void to_json(json& j, const Client& client) {
-//         switch (client) {
-//             case Client::FirstClient: j = "FirstClient"; break;
-//             case Client::SecondClient: j = "SecondClient"; break;
-//         }
-//     }
-//
-//     inline void from_json(const json& j, Client& client) {
-//         std::string s = j.get<std::string>();
-//         if (s == "FirstClient") 
-//             client = Client::FirstClient;
-//         else if (s == "SecondClient") 
-//             client = Client::SecondClient;
-//         else 
-//             throw std::runtime_error("Invalid client type");
-//     }
-// }
-
 namespace epollbook {
 
 /**
@@ -95,7 +75,6 @@ struct CheckinRequest {
             json["middle_name"] = body.middle_name;
             json["voter_unique_id"] = body.voter_unique_id;
             json["verified_id_message"] = VerifiedVoterID::ToJson(body.verified_id_message);
-            /* json["client_signature"] = signature_base64; */
             return json;
         }
     };

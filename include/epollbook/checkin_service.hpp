@@ -193,6 +193,7 @@ private:
     */
     void add_client(uint32_t client_id, ClientType type);
     // void remove_client(uint32_t client_id);
+    std::map<std::string, std::string> find_voter(const std::string& csv_file_path, uint32_t id);
 
 public:
     /**
