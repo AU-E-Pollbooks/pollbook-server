@@ -80,6 +80,8 @@ void CheckinService::handle_accept(const asio::error_code& error, asio::ip::tcp:
 
         ssl_stream_ptr->async_handshake(asio::ssl::stream_base::server,
             [this, ssl_stream_ptr, client_ip](const asio::error_code& handshake_error) {
+                bool isValidConnection = false;
+
                 if (!handshake_error) {
                     // The handshake was successful
                     // You can now read or write to the socket
@@ -107,6 +109,9 @@ void CheckinService::handle_accept(const asio::error_code& error, asio::ip::tcp:
                                     std::cerr << "Public key doesn't match previous public key found for user" << std::endl;
                                 }
                                 //if it matched, just don't save the key
+                                else {
+                                    isValidConnection = true;
+                                }
                                 if (client_id == 1) {
                                     add_client(client_id, ClientType::TrustedClient);
                                     logger->debug("adding client works");
@@ -116,17 +121,22 @@ void CheckinService::handle_accept(const asio::error_code& error, asio::ip::tcp:
                             }
                             else {
                                 //didn't find client id, check for matches on public key
+                                isValidConnection = true;
+
                                 for (auto it = client_public_keys.begin(); it != client_public_keys.end(); ++it) {
                                     if(it->second == pubkey) {
                                         //found matching public key, but non-matching client id
                                         std::cerr << "Client ID doesn't match ID associated with public key" << std::endl;
+                                        isValidConnection = false;
                                     }
                                 }
-                                //if it makes it here neither client id nor public key exist in the map,
-                                //so store as both file and in map
-                                client_public_keys.emplace(client_id, std::move(pubkey));
-                                // Open a file to write the public key
-                                save_pub_key(pubkey, client_id);
+                                if(isValidConnection) {
+                                    //if it makes it here neither client id nor public key exist in the map,
+                                    //so store as both file and in map
+                                    client_public_keys.emplace(client_id, std::move(pubkey));
+                                    // Open a file to write the public key
+                                    save_pub_key(pubkey, client_id);
+                                }
                                 // Clean up
                                 EVP_PKEY_free(pubkey);
                             }
@@ -139,8 +149,10 @@ void CheckinService::handle_accept(const asio::error_code& error, asio::ip::tcp:
                     } else {
                         std::cerr << "No certificate received from client" << std::endl;
                     }
-                    client_ssl_streams[client_ip] = ssl_stream_ptr;
-                    logger->debug("Accepted a connection from client at {}", client_ip);
+                    if(isValidConnection) {
+                        client_ssl_streams[client_ip] = ssl_stream_ptr;
+                        logger->debug("Accepted a connection from client at {}", client_ip);
+                    }
                     // Put the new socket in the map
                     /*client_sockets.emplace(client_ip, ssl_stream_ptr);*/
                     // Start a read for the message size
