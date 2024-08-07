@@ -226,6 +226,92 @@ void CheckinService::start_size_read(asio::ip::tcp::endpoint client_ip) {
         });
 }
 
+void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp::endpoint client_ip) {
+    read_from_csv();
+
+    std::string ticket, secret;
+    std::uint32_t id;
+    std::cout << msg_string;
+    nlohmann::json json = nlohmann::json::parse(msg_string);
+    std::map<std::string,std::string> voter_info;
+    TicketRequest request = TicketRequest::FromJson(json);
+    if(client_verifiers.find(request.body.client_id) == client_verifiers.end()) {
+        if(!load_client_public_key(request.body.client_id)) {
+            logger->warn("Could not load the public key for client number {}. Ignoring a voter ID validation request.", request.body.client_id);
+            return;
+        }
+    }
+    // Verify the client's signature on the message
+    std::string request_body_str = TicketRequest::Body::ToJson(request.body).dump();
+
+    openssl::Verifier& verifier = client_verifiers.at(request.body.client_id);
+    verifier.init();
+    verifier.add_bytes(request_body_str.data(), request_body_str.size());
+    logger->debug("Working.");
+
+    if(!verifier.finalize(request.signature)) {
+        logger->debug("Rejecting client {}'s request because the client's signature on the message was invalid",
+                      request.body.client_id);
+        return;
+    }
+
+    if (client_tickets_map.find(request.body.ticket) != client_tickets_map.end()) {
+        std::pair pair = client_tickets_map[request.body.ticket];
+        id = pair.first;
+        secret = pair.second;
+        voter_info = find_voter(Config::getString(Config::SECTION_BASIC, Config::VOTER_LIST_FILE),
+                                request.body.voter_unique_id);
+        TicketResponse::Body response_body(
+            true,
+            voter_info["last_name"],
+            voter_info["first_name"],
+            voter_info["middle_name"],
+            request.body.voter_unique_id,
+            secret
+        );
+        nlohmann::json body_json = TicketResponse::Body::ToJson(response_body);
+        std::string body_string = body_json.dump();
+        signer.init();
+        signer.add_bytes(body_string.data(), body_string.size());
+        TicketResponse response(std::move(response_body), signer.finalize());
+        std::string response_str = TicketResponse::ToJson(response).dump() + "\n";
+        asio::error_code ec;
+        asio::write(*(client_ssl_streams.at(client_ip)), asio::buffer(response_str), ec);
+        if (!ec) {
+            logger->debug("Sent message to Client");
+        } else {
+            logger->debug("Failed sending message: {}", ec);
+        }
+    }
+    else {
+        std::map<std::string,std::string> voter_info;
+        voter_info = find_voter(Config::getString(Config::SECTION_BASIC, Config::VOTER_LIST_FILE),
+                                request.body.voter_unique_id);
+        TicketResponse::Body response_body(
+            false,
+            voter_info["last_name"],
+            voter_info["first_name"],
+            voter_info["middle_name"],
+            request.body.voter_unique_id,
+            ""
+        );
+        nlohmann::json body_json = TicketResponse::Body::ToJson(response_body);
+        std::string body_string = body_json.dump();
+        signer.init();
+        signer.add_bytes(body_string.data(), body_string.size());
+        TicketResponse response(std::move(response_body), signer.finalize());
+        std::string response_str = TicketResponse::ToJson(response).dump() + "\n";
+        asio::error_code ec;
+        asio::write(*(client_ssl_streams.at(client_ip)), asio::buffer(response_str), ec);
+        if (!ec) {
+            logger->debug("Sent message to Client");
+        } else {
+            logger->debug("Failed sending message: {}", ec);
+        }
+        logger->warn("Invalid ticket");
+    }
+}
+
 void CheckinService::start_payload_read(asio::ip::tcp::endpoint client_ip, std::size_t size_of_message) {
     // Creating a shared pointer to hold the message content.
     auto msg = std::make_shared<std::string>();
@@ -266,55 +352,7 @@ void CheckinService::start_payload_read(asio::ip::tcp::endpoint client_ip, std::
                         }
                         switch (type) {
                             case ClientType::TrustedClient: {
-                                read_from_csv();
-                                std::string ticket, secret;
-                                std::uint32_t id;
-                                // std::pair pair = client_tickets_map[client_id];
-                                std::cout << msg_string;
-                                // std::cout << client_tickets_map[msg_string].second;
-                                nlohmann::json json = nlohmann::json::parse(msg_string);
-                                TicketRequest request = TicketRequest::FromJson(json);
-                                // msg_string.erase(std::remove(msg_string.begin(), msg_string.end(), '\n'), 
-                                //                  msg_string.cend());
-                                if (client_tickets_map.find(request.ticket) != client_tickets_map.end()) {
-                                    std::pair pair = client_tickets_map[request.ticket];
-                                    id = pair.first;
-                                    secret = pair.second;
-                                    std::map<std::string,std::string> voter_info;
-                                    voter_info = find_voter(Config::getString(Config::SECTION_BASIC, Config::VOTER_LIST_FILE),
-                                                            request.voter_unique_id);
-                                    TicketResponse response(
-                                        true,
-                                        voter_info["last_name"],
-                                        voter_info["first_name"],
-                                        voter_info["middle_name"],
-                                        request.voter_unique_id,
-                                        secret
-                                    );
-                                    std::string response_str = TicketResponse::ToJson(response).dump() + "\n";
-                                    // std::string response = "thing works\n";
-                                    asio::error_code ec;
-                                    asio::write(*(client_ssl_streams.at(client_ip)), asio::buffer(response_str), ec);
-                                    if (!ec) {
-                                        logger->debug("Sent message to Client");
-                                    } else {
-                                        logger->debug("Failed sending message: {}", ec);
-                                    }
-                                }
-                                else {
-                                    std::map<std::string,std::string> voter_info;
-                                    voter_info = find_voter(Config::getString(Config::SECTION_BASIC, Config::VOTER_LIST_FILE),
-                                                            request.voter_unique_id);
-                                    TicketResponse response(
-                                        false,
-                                        voter_info["last_name"],
-                                        voter_info["first_name"],
-                                        voter_info["middle_name"],
-                                        request.voter_unique_id,
-                                        ""
-                                    );
-                                    logger->debug("Invalid ticket");
-                                }
+                                handle_trusted_client(msg_string, client_ip);
                                 break;
                             }
                             case ClientType::UntrustedClient: {
@@ -387,24 +425,6 @@ void CheckinService::read_from_csv() {
             std::cerr << "Invalid line format: " << line << std::endl;
         }
     }
-
-
-
-    // std::ifstream file("ticket_validation.csv", std::ios::in);
-    // std::pair<std::string, std::string> pair;
-    // // std::map<std::uint32_t, std::pair<std::string, std::string>> ticket_map;
-    // if (!file.is_open()) {
-    //     std::cerr << "Error reading the file\n";
-    // }
-    //
-    // std::string id_str, ticket, secret;
-    // std::uint32_t id;
-    // char comma;
-    // while (file >> id_str >> comma >> ticket >> comma >> secret) {
-    //     id = static_cast<std::uint32_t>(std::stoul(id_str));
-    //     client_tickets_map[id] = std::make_pair(ticket, secret);
-    // }
-    // file.close();
 }
 
 void CheckinService::write_to_csv(const std::string& ticket, const std::string& secret, const std::uint32_t& id) {
@@ -433,7 +453,7 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
         auto find_voter_result = voter_status_table.find(request.body.voter_unique_id);
         if(find_voter_result != voter_status_table.end()) {
             if(find_voter_result->second == VoterStatus::ELIGIBLE) {
-                find_voter_result->second = VoterStatus::CHECKED_IN;
+                find_voter_result->second = VoterStatus::PENDING;
                 logger->debug("Accepted a check-in request for voter {} {} {} (UID {}) from client {}", request.body.first_name, request.body.middle_name, request.body.last_name, request.body.voter_unique_id, request.body.client_id_num);
                 accept = true;
             } else {
@@ -574,32 +594,6 @@ std::map<std::string, std::string> CheckinService::find_voter(const std::string&
             std::cerr << "Invalid line format: " << line << std::endl;
         }
     }
-
-    
-    // std::ifstream csv_file_stream(csv_file_path);
-    // // First read the CSV header line
-    // std::string header_line;
-    // std::getline(csv_file_stream, header_line);
-    // // Ensure the expected headers are there
-    // if(header_line.substr(0, header_line.find(",")) != "UID") {
-    //     throw std::runtime_error("Voter CSV file " + csv_file_path + " did not have the expected column headers");
-    // }
-    // std::string file_line;
-    // while(std::getline(csv_file_stream, file_line)) {
-    //     // For now, just get the first column (the UID) and ignore the others
-    //     // If we need to load more information I'll write a real CSV parser
-    //     std::string uid_column_string = file_line.substr(0, file_line.find(","));
-    //     std::uint32_t uid = std::stoul(uid_column_string);
-    //     // voter_status_table.emplace(uid, VoterStatus::ELIGIBLE);
-    //     if (uid == id) {
-    //         std::map<std::string, std::string> voter_info;
-    //         voter_info["voter_id"] = std::to_string(uid);
-    //         voter_info["last_name"] = file_line.substr(1, file_line.find(","));
-    //         voter_info["first_name"] = file_line.substr(2, file_line.find(","));
-    //         voter_info["middle_name"] = file_line.substr(3, file_line.find(","));
-    //         return voter_info;
-    //     }
-    // }
 }
 
 void CheckinService::load_voter_list(const std::string& csv_file_path) {

@@ -95,19 +95,7 @@ void PollbookClient::connect_checkin_server(const std::string& hostname, const s
 }
 
 void PollbookClient::connect_id_server(const std::string& hostname, const std::string& port) {
-/* void PollbookClient::connect_id_server(asio::ssl::stream<asio::ip::tcp::socket>& ssl_socket, const std::string& port) { */
-    /* asio::ip::tcp::resolver server_resolver(network_io_context); */
-    /* auto resolve_results = server_resolver.resolve(hostname, port); */
     PollbookClient::make_handshake(hostname, port, true);
-    /* asio::connect(id_server_socket, resolve_results); */
-    /* asio::ip::tcp::resolver resolver(id_server_socket.get_io_context()); */
-    /* auto endpoints = resolver.resolve(host, service); */
-    
-    /* // Attempt to connect to an endpoint */
-    /* asio::connect(ssl_socket.lowest_layer(), endpoints); */
-    
-    /* // Perform the SSL handshake */
-    /* ssl_socket.handshake(asio::ssl::stream_base::client); */
     id_connected = true;
 }
 
@@ -118,8 +106,6 @@ void PollbookClient::make_handshake(const std::string& host, const std::string& 
     
     try {
         if(is_id_server) {
-            // Attempt to connect to an endpoint
-            /* std::cout << "id break" << std::endl; */
             asio::connect(id_server_socket.lowest_layer(), endpoints);
         
             // Perform the SSL handshake
@@ -127,7 +113,6 @@ void PollbookClient::make_handshake(const std::string& host, const std::string& 
         }
         else {
             // Attempt to connect to an endpoint
-            /* std::cout << "checkin break" << std::endl; */
             asio::connect(checkin_server_socket.lowest_layer(), endpoints);
         
             // Perform the SSL handshake
@@ -136,7 +121,6 @@ void PollbookClient::make_handshake(const std::string& host, const std::string& 
     }catch(const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
         throw;
-
     }
 }
 
@@ -263,16 +247,16 @@ void PollbookClient::start_checkin_request_write(const VerifiedVoterID& verified
     std::string buffer = std::to_string(message_size) + "\n" + request_message_string +"\n";
 
     asio::async_write(checkin_server_socket,
-                      asio::buffer(buffer),
-                      [this](const asio::error_code& error, std::size_t bytes_written) {
-                          if(!error) {
-                              logger->debug("Sent a check-in request for voter {} {} {} to check-in service.", std::get<0>(current_request_voter_name), std::get<1>(current_request_voter_name), std::get<2>(current_request_voter_name));
-                              start_message_read(false);
-                          } else {
-                              logger->error("Error writing the ID-verification request to the ID service! Error: {}", error.message());
-                              current_request_promise.set_value({false, "Network error: I/O error when sending a request to the check-in service"});
-                          }
-                      });
+        asio::buffer(buffer),
+        [this](const asio::error_code& error, std::size_t bytes_written) {
+            if(!error) {
+                logger->debug("Sent a check-in request for voter {} {} {} to check-in service.", std::get<0>(current_request_voter_name), std::get<1>(current_request_voter_name), std::get<2>(current_request_voter_name));
+                start_message_read(false);
+            } else {
+                logger->error("Error writing the ID-verification request to the ID service! Error: {}", error.message());
+                current_request_promise.set_value({false, "Network error: I/O error when sending a request to the check-in service"});
+            }
+        });
 }
 
 void PollbookClient::start_checkin_response_read(std::size_t message_size, std::shared_ptr<asio::streambuf> buf) {
@@ -313,8 +297,6 @@ void PollbookClient::handle_checkin_response(const CheckinResponse& response) {
     } else {
         current_request_promise.set_value({false, "Check-in service rejected the request"});
     }
-
-
 }
 
 std::future<CheckinResult> PollbookClient::check_in_voter(const std::string& first_name, const std::string& middle_name,
@@ -361,17 +343,24 @@ std::future<CheckinResult> PollbookClient::verify_ticket(const std::string& firs
     // Reset the promise-future pair for the current request
     current_request_promise = std::promise<CheckinResult>();
 
-    TicketRequest request(voter_id, ticket);
+    auto current_time = std::chrono::system_clock::now();
+    std::uint64_t current_timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                          current_time.time_since_epoch())
+                                          .count();
+    std::uint32_t client_id = Config::getUInt32(Config::SECTION_BASIC, Config::CLIENT_ID);
+    std::cout << client_id << std::endl;
+    TicketRequest::Body response_body(client_id, voter_id, current_timestamp, ticket);
+    nlohmann::json body_json = TicketRequest::Body::ToJson(response_body);
+    std::string body_string = body_json.dump();
+    private_key_signer.init();
+    private_key_signer.add_bytes(body_string.data(), body_string.size());
+    TicketRequest request(std::move(response_body), private_key_signer.finalize());
+
     nlohmann::json request_json = TicketRequest::ToJson(request);
     std::string message = request_json.dump();
     logger->debug(message);
-    // Prepare the message
-    // nlohmann::json j;
-    // j["ticket"] = ticket;
-    // std::string message = j.dump();
-    
+
     std::size_t message_size = message.size();
-    // std::string outgoing_message = std::to_string(message_size) + "\n" + message + "\n";
     std::string outgoing_message = std::to_string(message_size) + "\n" + message + "\n";
 
     // Send the message asynchronously
@@ -402,17 +391,29 @@ void PollbookClient::start_verify_ticket_response_read() {
                 try {
                     std::string first_name, middle_name, last_name;
                     nlohmann::json response_json = nlohmann::json::parse(response_str);
-                    bool is_valid = response_json["approved"];
-                    std::string secret = response_json["secret"];
-                    first_name = response_json["first_name"];
-                    middle_name = response_json["middle_name"];
-                    last_name = response_json["last_name"];
+                    TicketResponse response = TicketResponse::FromJson(response_json);
 
-                    if (is_valid) {
-                        logger->debug("Voter verified. Hello {} {} {}! Secret: {}", first_name, middle_name, last_name, secret);
-                        current_request_promise.set_value({true, secret});
+                    std::string response_body_str = TicketResponse::Body::ToJson(response.body).dump();
+                    checkin_service_verifier.init();
+                    checkin_service_verifier.add_bytes(response_body_str.data(), response_body_str.size());
+                    bool verified = checkin_service_verifier.finalize(response.signature);
+
+                    bool is_valid = response_json["body"]["approved"];
+                    std::string secret = response_json["body"]["secret"];
+                    first_name = response_json["body"]["first_name"];
+                    middle_name = response_json["body"]["middle_name"];
+                    last_name = response_json["body"]["last_name"];
+
+                    if(verified) {
+                        if (is_valid) {
+                            logger->debug("Voter verified. Hello {} {} {}! Secret: {}", first_name, middle_name, last_name, secret);
+                            current_request_promise.set_value({true, secret});
+                        } else {
+                            current_request_promise.set_value({false, secret});
+                        }
                     } else {
-                        current_request_promise.set_value({false, secret});
+                        current_request_promise.set_value({false, "Invalid signature from the ID verification service on the voter's ID. OpenSSL error: " +
+                                                                    openssl::get_error_string(ERR_get_error(), "")});
                     }
                 } catch (const std::exception& e) {
                     logger->error("Error parsing verify_ticket response: {}", e.what());

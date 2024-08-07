@@ -19,6 +19,7 @@ namespace epollbook {
 
 enum class VoterStatus {
     ELIGIBLE,
+    PENDING,
     CHECKED_IN
 };
 
@@ -145,6 +146,7 @@ private:
      * already read the initial 4 bytes to determine the size of the message.
      */
     void start_payload_read(const asio::ip::tcp::endpoint client_ip, std::size_t size_of_message);
+    void handle_trusted_client(std::string msg_string, asio::ip::tcp::endpoint client_ip);
     /* void start_payload_read(const asio::ip::tcp::endpoint client_ip, std::shared_ptr<asio::streambuf> buf); */
 
     /**
