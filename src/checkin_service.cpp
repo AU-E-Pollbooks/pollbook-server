@@ -83,9 +83,6 @@ void CheckinService::handle_accept(const asio::error_code& error, asio::ip::tcp:
 
                 if (!handshake_error) {
                     // The handshake was successful
-                    // You can now read or write to the socket
-                    /* asio::ip::tcp::endpoint client_ip = new_socket.remote_endpoint(); */
-                    /*auto client_ip = ssl_stream_ptr->lowest_layer().remote_endpoint();*/
                     X509* clientCert = SSL_get0_peer_certificate(ssl_stream_ptr->native_handle());
 
                     if (clientCert != nullptr) {
@@ -95,7 +92,6 @@ void CheckinService::handle_accept(const asio::error_code& error, asio::ip::tcp:
                             client_id_map[client_ip] = client_id;
                         }
                         // Extract the public key from the certificate
-                        // check_second_client = (client_id == 1);
                         
                         EVP_PKEY* pubkey = X509_get_pubkey(clientCert);
                         if (pubkey != nullptr) {
@@ -121,51 +117,12 @@ void CheckinService::handle_accept(const asio::error_code& error, asio::ip::tcp:
                                 save_pub_key(std::move(key_copy), client_id);
                             }
                             
-                            // Decide what to do based on the key check results
-                                
-                            if (client_id == 1) {
+                            std::unordered_set<uint32_t> trusted_clients = load_trusted_clients("trusted_clients.txt");
+                            if (trusted_clients.find(client_id) != trusted_clients.end()) {
                                 add_client(client_id, ClientType::TrustedClient);
                             } else {
                                 add_client(client_id, ClientType::UntrustedClient); 
                             }
-                            ////first, check if the client_id exists in the map
-                            //auto foundID = client_public_keys.find(client_id);
-                            //if(foundID != client_public_keys.end()) {
-                            //    EnvelopeKey env_pubkey(pubkey);
-                            //    //found the client id, so check if public key matches
-                            //    //if it matched, just don't save the key
-                            //    // else {
-                            //    //     isValidConnection = true;
-                            //    // }
-                            //    if (client_id == 1) {
-                            //        add_client(client_id, ClientType::TrustedClient);
-                            //        logger->debug("adding client works");
-                            //    } else {
-                            //        add_client(client_id, ClientType::UntrustedClient); 
-                            //    }
-                            //}
-                            //else {
-                            //    //didn't find client id, check for matches on public key
-                            //    // isValidConnection = true;
-                            //
-                            //    for (auto it = client_public_keys.begin(); it != client_public_keys.end(); ++it) {
-                            //        if(it->second == pubkey) {
-                            //            //found matching public key, but non-matching client id
-                            //            std::cerr << "Client ID doesn't match ID associated with public key" << std::endl;
-                            //            // isValidConnection = false;
-                            //        }
-                            //    }
-                            //    // if(isValidConnection) {
-                            //    //if it makes it here neither client id nor public key exist in the map,
-                            //    // Open a file to write the public key
-                            //    save_pub_key(pubkey, client_id);
-                            //    //so store as both file and in map
-                            //    client_public_keys.emplace(client_id, std::move(pubkey));
-                            //    // }
-                            //    // Clean up
-                            //    EVP_PKEY_free(pubkey);
-                            //}
-                            
                         } else {
                             logger->error("Error extracting public key for client ID {}", client_id);
                         }                        
@@ -587,6 +544,7 @@ bool CheckinService::load_client_public_key(std::uint32_t client_id) {
 std::map<std::string, std::string> CheckinService::find_voter(const std::string& csv_file_path, uint32_t id) {
 
     std::ifstream file(csv_file_path);
+    std::map<std::string, std::string> voter_info;
     if (!file.is_open()) {
         std::cerr << "Error opening the file\n";
     }
@@ -605,17 +563,17 @@ std::map<std::string, std::string> CheckinService::find_voter(const std::string&
             std::getline(iss, state, ',') &&
             std::getline(iss, zip)) {
             if (uid == std::to_string(id)) {
-                std::map<std::string, std::string> voter_info;
                 voter_info["voter_id"] = id;
                 voter_info["last_name"] = last_name;
                 voter_info["first_name"] = first_name;
                 voter_info["middle_name"] = middle_name;
-                return voter_info;
+                break;
             }
         } else {
             std::cerr << "Invalid line format: " << line << std::endl;
         }
     }
+    return voter_info;
 }
 
 void CheckinService::load_voter_list(const std::string& csv_file_path) {
@@ -666,5 +624,24 @@ void CheckinService::add_client(uint32_t client_id, ClientType type) {
     clients[client_id] = ClientInfo(client_id, type);
 }
 
+std::unordered_set<uint32_t> CheckinService::load_trusted_clients(const std::string& filename) {
+    std::unordered_set<uint32_t> trusted_clients;
+    std::ifstream file(filename);
+    std::string line;
+    
+    if (!file.is_open()) {
+        throw std::runtime_error("Unable to open file: " + filename);
+    }
+    
+    while (std::getline(file, line)) {
+        std::istringstream iss(line);
+        uint32_t client_id;
+        if (iss >> client_id) {
+            trusted_clients.insert(client_id);
+        }
+    }
+    
+    return trusted_clients;
+}
 
 }  // namespace epollbook
