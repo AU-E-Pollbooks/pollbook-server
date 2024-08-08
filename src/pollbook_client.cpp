@@ -348,7 +348,6 @@ std::future<CheckinResult> PollbookClient::verify_ticket(const std::string& firs
                                           current_time.time_since_epoch())
                                           .count();
     std::uint32_t client_id = Config::getUInt32(Config::SECTION_BASIC, Config::CLIENT_ID);
-    std::cout << client_id << std::endl;
     TicketRequest::Body response_body(client_id, voter_id, current_timestamp, ticket);
     nlohmann::json body_json = TicketRequest::Body::ToJson(response_body);
     std::string body_string = body_json.dump();
@@ -358,7 +357,6 @@ std::future<CheckinResult> PollbookClient::verify_ticket(const std::string& firs
 
     nlohmann::json request_json = TicketRequest::ToJson(request);
     std::string message = request_json.dump();
-    logger->debug(message);
 
     std::size_t message_size = message.size();
     std::string outgoing_message = std::to_string(message_size) + "\n" + message + "\n";

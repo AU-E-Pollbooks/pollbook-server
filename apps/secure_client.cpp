@@ -60,9 +60,9 @@ int main(int argc, char** argv) {
     // std::cout << "Connected to Check In server" << std::endl;
     epollbook::CheckinResult result = result_future.get();
     if(result.success) {
-        std::cout << "Check-in succeeded!" << std::endl;
+        std::cout << "Ticket verification succeeded!" << std::endl;
     } else {
-        std::cout << "Check-in failed! Reason: " << result.failure_reason << std::endl;
+        std::cout << "Ticket verification failed! Reason: " << result.failure_reason << std::endl;
     }
 
 
