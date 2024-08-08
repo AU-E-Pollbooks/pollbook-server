@@ -9,6 +9,7 @@
 #include <asio/ssl.hpp>
 #include <asio/ssl/context.hpp>
 #include <iostream>
+#include <unordered_set>
 
 #include <shared_mutex>
 #include <cstdint>
@@ -197,6 +198,7 @@ private:
     void add_client(uint32_t client_id, ClientType type);
     // void remove_client(uint32_t client_id);
     std::map<std::string, std::string> find_voter(const std::string& csv_file_path, uint32_t id);
+    std::unordered_set<uint32_t> load_trusted_clients(const std::string& filename);
 
 public:
     /**
