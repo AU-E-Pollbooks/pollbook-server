@@ -2,6 +2,7 @@
 
 #include "checkin_request.hpp"
 #include "openssl/signature.hpp"
+#include "openssl/envelope_key.hpp"
 
 #include <spdlog/spdlog.h>
 #include <asio.hpp>
@@ -113,7 +114,7 @@ private:
     /**
      * saves public key into a folder
      */
-    void save_pub_key(EVP_PKEY* pubkey, std::uint32_t client_id);
+    void save_pub_key(const openssl::EnvelopeKey& envelope_key, std::uint32_t client_id);
     /**
      * Handler function for ASIO accept events.
      */

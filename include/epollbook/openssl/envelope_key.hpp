@@ -81,7 +81,7 @@ public:
      * if this EnvelopeKey is a public key) out to a PEM file on disk.
      * @param pem_file_name The name (or path) of the PEM file to create
      */
-    void to_pem_public(const std::string& pem_file_name);
+    void to_pem_public(const std::string& pem_file_name) const;
     /**
      * Serializes the public-key component of this EnvelopeKey into PEM format,
      * then returns the resulting PEM "file" in a string. This avoids the
@@ -89,7 +89,7 @@ public:
      * @return A string containing the PEM representation of this EnvelopeKey's
      * public component.
      */
-    std::string to_pem_public();
+    std::string to_pem_public() const;
     /**
      * Factory function that constructs an EnvelopeKey by loading a public key
      * from a PEM file on disk.

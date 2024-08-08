@@ -24,17 +24,18 @@ EnvelopeKey& EnvelopeKey::operator=(EnvelopeKey&& other) {
 }
 
 bool operator== (EnvelopeKey& lhs, EnvelopeKey& rhs) {
-    if(lhs.key.get() == rhs.key.get()) {
-        return true;
-    }
-    return false;
+    // if(lhs.key.get() == rhs.key.get()) {
+    //     return true;
+    // }
+    // return false;
+    return lhs.to_pem_public() == rhs.to_pem_public();
 }
 
 int EnvelopeKey::get_max_size() {
     return EVP_PKEY_size(key.get());
 }
 
-std::string EnvelopeKey::to_pem_public() {
+std::string EnvelopeKey::to_pem_public() const {
     // Serialize the key to PEM format in memory
     std::unique_ptr<BIO, DeleterFor<BIO>> memory_bio(BIO_new(BIO_s_mem()));
     if(PEM_write_bio_PUBKEY(memory_bio.get(), key.get()) != 1) {
@@ -50,7 +51,7 @@ std::string EnvelopeKey::to_pem_public() {
     return pem_string;
 }
 
-void EnvelopeKey::to_pem_public(const std::string& pem_file_name) {
+void EnvelopeKey::to_pem_public(const std::string& pem_file_name) const {
     FILE* pem_file = fopen(pem_file_name.c_str(), "w");
     if(pem_file == NULL) {
         switch(errno) {

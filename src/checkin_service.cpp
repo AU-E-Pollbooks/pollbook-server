@@ -57,18 +57,17 @@ void CheckinService::do_accept() {
         });
 }
 
-void CheckinService::save_pub_key(EVP_PKEY* pubkey, std::uint32_t client_id) {
+void CheckinService::save_pub_key(const openssl::EnvelopeKey& envelope_key, std::uint32_t client_id) {
     std::stringstream pub_key_file_path_builder;
     pub_key_file_path_builder << Config::getString(Config::SECTION_SECURITY, Config::CLIENT_KEYS_FOLDER)
-                          << Config::getString(Config::SECTION_SECURITY, Config::CLIENT_KEY_FILE_PREFIX) << client_id << ".pem";
+                              << Config::getString(Config::SECTION_SECURITY, Config::CLIENT_KEY_FILE_PREFIX) 
+                              << client_id << ".pem";
     std::string pkey_file_path = pub_key_file_path_builder.str();
-    FILE* pubkey_file = fopen(pkey_file_path.c_str(), "w");
-    if (pubkey_file != nullptr) {
-        // Write the public key in PEM format
-        PEM_write_PUBKEY(pubkey_file, pubkey);
-        fclose(pubkey_file);
-    } else {
-        std::cerr << "Error opening file to write public key" << std::endl;
+    try {
+        envelope_key.to_pem_public(pkey_file_path);
+        logger->info("Successfully saved public key for client ID {} to {}", client_id, pkey_file_path);
+    } catch (const std::exception& e) {
+        logger->error("Error saving public key for client ID {} to {}: {}", client_id, pkey_file_path, e.what());
     }
 }
 
@@ -80,7 +79,7 @@ void CheckinService::handle_accept(const asio::error_code& error, asio::ip::tcp:
 
         ssl_stream_ptr->async_handshake(asio::ssl::stream_base::server,
             [this, ssl_stream_ptr, client_ip](const asio::error_code& handshake_error) {
-                bool isValidConnection = false;
+                // bool isValidConnection = false;
 
                 if (!handshake_error) {
                     // The handshake was successful
@@ -100,59 +99,84 @@ void CheckinService::handle_accept(const asio::error_code& error, asio::ip::tcp:
                         
                         EVP_PKEY* pubkey = X509_get_pubkey(clientCert);
                         if (pubkey != nullptr) {
-                            //first, check if the client_id exists in the map
-                            auto foundID = client_public_keys.find(client_id);
-                            if(foundID != client_public_keys.end()) {
-                                //found the client id, so check if public key matches
-                                if(foundID->second != pubkey) {
-                                    //didn't match
-                                    std::cerr << "Public key doesn't match previous public key found for user" << std::endl;
-                                }
-                                //if it matched, just don't save the key
-                                else {
-                                    isValidConnection = true;
-                                }
-                                if (client_id == 1) {
-                                    add_client(client_id, ClientType::TrustedClient);
-                                    logger->debug("adding client works");
-                                } else {
-                                    add_client(client_id, ClientType::UntrustedClient); 
-                                }
-                            }
-                            else {
-                                //didn't find client id, check for matches on public key
-                                isValidConnection = true;
+                            openssl::EnvelopeKey envelope_key(pubkey);
 
-                                for (auto it = client_public_keys.begin(); it != client_public_keys.end(); ++it) {
-                                    if(it->second == pubkey) {
-                                        //found matching public key, but non-matching client id
-                                        std::cerr << "Client ID doesn't match ID associated with public key" << std::endl;
-                                        isValidConnection = false;
-                                    }
+                            // auto it = client_public_keys.find(client_id);
+                            auto [it, inserted] = client_public_keys.try_emplace(client_id, envelope_key);
+                            if (!inserted) {
+                                // A key for this client_id already exists
+                                if(!(it->second == envelope_key)) {
+                                    logger->warn("Public key mismatch for client ID {}.\nOld key:\n{}, New key:\n{}",
+                                                 client_id, it->second.to_pem_public(), envelope_key.to_pem_public());
+                                    // For now, let's update the key:
+                                    // it->second = std::move(envelope_key);
+                                } else {
+                                    logger->debug("Public key matches for client ID {}", client_id);
                                 }
-                                if(isValidConnection) {
-                                    //if it makes it here neither client id nor public key exist in the map,
-                                    //so store as both file and in map
-                                    client_public_keys.emplace(client_id, std::move(pubkey));
-                                    // Open a file to write the public key
-                                    save_pub_key(pubkey, client_id);
-                                }
-                                // Clean up
-                                EVP_PKEY_free(pubkey);
+                            } else {
+                                // New client
+                                openssl::EnvelopeKey key_copy = envelope_key;  // Create a copy
+                                logger->info("New client connected with ID {}", client_id);
+                                client_public_keys.emplace(client_id, std::move(envelope_key));
+                                save_pub_key(std::move(key_copy), client_id);
                             }
                             
+                            // Decide what to do based on the key check results
+                                
+                            if (client_id == 1) {
+                                add_client(client_id, ClientType::TrustedClient);
+                            } else {
+                                add_client(client_id, ClientType::UntrustedClient); 
+                            }
+                            ////first, check if the client_id exists in the map
+                            //auto foundID = client_public_keys.find(client_id);
+                            //if(foundID != client_public_keys.end()) {
+                            //    EnvelopeKey env_pubkey(pubkey);
+                            //    //found the client id, so check if public key matches
+                            //    //if it matched, just don't save the key
+                            //    // else {
+                            //    //     isValidConnection = true;
+                            //    // }
+                            //    if (client_id == 1) {
+                            //        add_client(client_id, ClientType::TrustedClient);
+                            //        logger->debug("adding client works");
+                            //    } else {
+                            //        add_client(client_id, ClientType::UntrustedClient); 
+                            //    }
+                            //}
+                            //else {
+                            //    //didn't find client id, check for matches on public key
+                            //    // isValidConnection = true;
+                            //
+                            //    for (auto it = client_public_keys.begin(); it != client_public_keys.end(); ++it) {
+                            //        if(it->second == pubkey) {
+                            //            //found matching public key, but non-matching client id
+                            //            std::cerr << "Client ID doesn't match ID associated with public key" << std::endl;
+                            //            // isValidConnection = false;
+                            //        }
+                            //    }
+                            //    // if(isValidConnection) {
+                            //    //if it makes it here neither client id nor public key exist in the map,
+                            //    // Open a file to write the public key
+                            //    save_pub_key(pubkey, client_id);
+                            //    //so store as both file and in map
+                            //    client_public_keys.emplace(client_id, std::move(pubkey));
+                            //    // }
+                            //    // Clean up
+                            //    EVP_PKEY_free(pubkey);
+                            //}
+                            
                         } else {
-                            std::cerr << "Error extracting public key" << std::endl;
-                        }
+                            logger->error("Error extracting public key for client ID {}", client_id);
+                        }                        
                         // Clean up
-                        X509_free(clientCert);
                     } else {
                         std::cerr << "No certificate received from client" << std::endl;
                     }
-                    if(isValidConnection) {
-                        client_ssl_streams[client_ip] = ssl_stream_ptr;
-                        logger->debug("Accepted a connection from client at {}", client_ip);
-                    }
+                    // if(isValidConnection) {
+                    client_ssl_streams[client_ip] = ssl_stream_ptr;
+                    logger->debug("Accepted a connection from client at {}", client_ip);
+                    // }
                     // Put the new socket in the map
                     /*client_sockets.emplace(client_ip, ssl_stream_ptr);*/
                     // Start a read for the message size
@@ -231,7 +255,6 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
 
     std::string ticket, secret;
     std::uint32_t id;
-    std::cout << msg_string;
     nlohmann::json json = nlohmann::json::parse(msg_string);
     std::map<std::string,std::string> voter_info;
     TicketRequest request = TicketRequest::FromJson(json);
@@ -247,7 +270,6 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
     openssl::Verifier& verifier = client_verifiers.at(request.body.client_id);
     verifier.init();
     verifier.add_bytes(request_body_str.data(), request_body_str.size());
-    logger->debug("Working.");
 
     if(!verifier.finalize(request.signature)) {
         logger->debug("Rejecting client {}'s request because the client's signature on the message was invalid",
