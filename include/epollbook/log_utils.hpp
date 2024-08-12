@@ -1,5 +1,14 @@
 #pragma once
+/**
+ * @file log_utils.hpp
+ * In addition to defining the LogUtils class, this file also includes all the
+ * necessary headers from the spdlog and fmt libraries to enable support for
+ * logging the data types used in this project (e.g. bin_to_hex.h for logging
+ * hexadecimal values). This is easier than remembering to include these headers
+ * individually in every source file that contains a logging statement.
+ */
 
+#include <fmt/ranges.h>
 #include <spdlog/fmt/bin_to_hex.h>
 #include <spdlog/fmt/ostr.h>
 #include <spdlog/spdlog.h>

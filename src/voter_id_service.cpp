@@ -20,14 +20,11 @@ VoterIDService::VoterIDService()
           connection_listener(
                   network_io_context,
                   asio::ip::tcp::endpoint(
-                      asio::ip::tcp::tcp::v4(), 
+                      asio::ip::tcp::tcp::v4(),
                       Config::getUInt16(Config::SECTION_BASIC, Config::ID_SERVICE_PORT))),
           signer(openssl::EnvelopeKey::from_pem_private(Config::getString(Config::SECTION_SECURITY, Config::LOCAL_PRIVATE_KEY)),
                  signature_digest_algorithm) {
           configure_ssl_context(ssl_context,
-                      /*"/pollbook-server/build/apps/local-test-deployment/server1/id_cert.pem",
-                      "/pollbook-server/build/apps/local-test-deployment/server1/private_key.pem", 
-                      "/pollbook-server/build/apps/local-test-deployment/server1/ca/ca_cert.pem");*/
                       Config::getString(Config::SECTION_SECURITY, Config::ID_SERVICE_CERT),
                       Config::getString(Config::SECTION_SECURITY, Config::LOCAL_PRIVATE_KEY),
                       Config::getString(Config::SECTION_SECURITY, Config::CA_CERT));
@@ -89,18 +86,18 @@ void VoterIDService::handle_accept(const asio::error_code& error, asio::ip::tcp:
                         std::cerr << "No certificate received from client" << std::endl;
                     }
                     client_ssl_streams[client_ip] = ssl_stream_ptr;
-                    
+
                     logger->debug("Accepted a connection from client at {}", client_ip);
                     // Put the new socket in the map
                     /* client_sockets.emplace(client_ip, ssl_stream_ptr); */
                     // Start a read for the message size
                     start_size_read(client_ip);
-                    // Enqueue another accept operation for the connection listener so it keeps listening
-                    do_accept();
                 }
                 else {
                     logger->warn("Handshake failed: {}", handshake_error.message());
                 }
+                // Enqueue another accept operation for the connection listener so it keeps listening
+                do_accept();
             });
     }
     else {
@@ -108,10 +105,10 @@ void VoterIDService::handle_accept(const asio::error_code& error, asio::ip::tcp:
     }
 }
 
-void VoterIDService::configure_ssl_context(asio::ssl::context& ssl_context, 
-                           const std::string& cert_file, 
-                           const std::string& key_file, 
-                           const std::string& ca_file) {
+void VoterIDService::configure_ssl_context(asio::ssl::context& ssl_context,
+                                           const std::string& cert_file,
+                                           const std::string& key_file,
+                                           const std::string& ca_file) {
     ssl_context.use_certificate_chain_file(cert_file);
     ssl_context.use_private_key_file(key_file, asio::ssl::context::pem);
     ssl_context.load_verify_file(ca_file);
@@ -135,7 +132,7 @@ void VoterIDService::start_size_read(asio::ip::tcp::endpoint client_ip) {
         if(!error) {
             *msg_size_str = std::string(asio::buffer_cast<const char*>(this->client_buffers[client_ip]->data()), bytes_read);
             *message_size = std::stoul(*msg_size_str);
-            logger->debug("Client at {}: Message size is {} bytes", client_ip, *message_size); 
+            logger->debug("Client at {}: Message size is {} bytes", client_ip, *message_size);
             client_buffers[client_ip]->consume(bytes_read);
             start_payload_read(client_ip, *message_size);
         } else if(error == asio::error::eof || error == asio::error::connection_aborted) {
@@ -150,7 +147,7 @@ void VoterIDService::start_payload_read(asio::ip::tcp::endpoint client_ip, std::
     if (client_buffers.find(client_ip) == client_buffers.end()) {
         client_buffers[client_ip] = std::make_shared<asio::streambuf>();
     }
-    asio::async_read_until(*(client_ssl_streams.at(client_ip)), *client_buffers[client_ip], "\n", 
+    asio::async_read_until(*(client_ssl_streams.at(client_ip)), *client_buffers[client_ip], "\n",
     [this, msg, client_ip, size_of_message](const asio::error_code& error, std::size_t bytes_read) {
         if(!error) {
             if(size_of_message == bytes_read - 1) {
@@ -186,8 +183,9 @@ void VoterIDService::save_pub_key(EVP_PKEY* pubkey, std::uint32_t client_id) {
         // Write the public key in PEM format
         PEM_write_PUBKEY(pubkey_file, pubkey);
         fclose(pubkey_file);
+        logger->debug("Saved public key for client {} to file {}", client_id, pkey_file_path);
     } else {
-        std::cerr << "Error opening file to write public key" << std::endl;
+        logger->error("Error opening file {} to write public key", pkey_file_path);
     }
 }
 
@@ -243,10 +241,10 @@ void VoterIDService::handle_validation_request(const asio::ip::tcp::endpoint& cl
     std::vector<std::uint8_t> signature = signer.finalize();
     // Send it back in a response. For now, the write is synchronous, since we don't expect it to take very long.
     VerifiedVoterID response(request, voter_unique_id, std::move(signature));
-    
-    // 
+
+    //
     nlohmann::json response_json = VerifiedVoterID::ToJson(response);
-    
+
     std::size_t response_size = response_json.size();
     std::string response_msg_str = response_json.dump();
     std::string buffer = response_msg_str + "\n";
