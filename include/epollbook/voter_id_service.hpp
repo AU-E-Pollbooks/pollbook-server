@@ -6,6 +6,9 @@
 
 #include <spdlog/spdlog.h>
 #include <asio.hpp>
+#include <asio/ssl.hpp>
+#include <asio/ssl/context.hpp>
+#include <iostream>
 
 #include <cstdint>
 #include <map>
@@ -47,6 +50,8 @@ private:
     std::shared_ptr<spdlog::logger> logger;
     /** The io_context that all the sockets will use */
     asio::io_context network_io_context;
+    /* A variable for ssl context with tls ver 12 */ 
+    asio::ssl::context ssl_context;
     /**
      * A "server socket" that listens for incoming connections from clients
      */
@@ -55,6 +60,7 @@ private:
      * Maps a client IP address to a socket connected to that client
      */
     std::map<asio::ip::tcp::endpoint, asio::ip::tcp::socket> client_sockets;
+    std::map<asio::ip::tcp::endpoint, std::shared_ptr<asio::ssl::stream<asio::ip::tcp::socket>>> client_ssl_streams;
     /**
      * Stream buffer that is used for reading client size and message
      */
@@ -71,12 +77,20 @@ private:
      */
     std::map<std::uint32_t, openssl::Verifier> client_verifiers;
     /**
+     * Gets client id from the certificate
+     */
+    std::uint32_t get_client_id_from_cert(X509* cert);
+    /**
      * Handler function for ASIO accept events.
      */
     void handle_accept(const asio::error_code& error, asio::ip::tcp::socket incoming_socket);
     /**
      * Starts an asynchronous accept request on the connection listener.
      */
+    void configure_ssl_context(asio::ssl::context& ssl_context, 
+                               const std::string& cert_file, 
+                               const std::string& key_file, 
+                               const std::string& ca_file);
     void do_accept();
     /**
      * Starts an asynchronous read on the socket for the specified client
@@ -92,7 +106,10 @@ private:
      * already read the initial 4 bytes to determine the size of the message.
      */
     void start_payload_read(asio::ip::tcp::endpoint client_ip, std::size_t size_of_message);
-
+    /**
+     * saves public key into a folder
+     */
+    void save_pub_key(EVP_PKEY* pubkey, std::uint32_t client_id);
     /**
      * Handles a single ID-validation request from a client, assuming it has already
      * been read and deserialized in the "raw" read handler.

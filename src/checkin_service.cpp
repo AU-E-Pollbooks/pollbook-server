@@ -2,7 +2,9 @@
 #include "epollbook/config/config.hpp"
 #include "epollbook/log_utils.hpp"
 
+#include <fstream>
 #include <asio.hpp>
+#include <openssl/rand.h>
 
 #include <array>
 #include <iostream>
@@ -11,46 +13,136 @@ namespace epollbook {
 
 CheckinService::CheckinService()
         : logger(spdlog::get(LogUtils::get_default_logger_name())),
-          connection_listener(network_io_context,
-                              asio::ip::tcp::endpoint(
-                                  asio::ip::tcp::tcp::v4(),
-                                  Config::getUInt16(Config::SECTION_BASIC, Config::CHECKIN_SERVICE_PORT))),
+          ssl_context(asio::ssl::context::tlsv12_server),
+          connection_listener(
+                  network_io_context,
+                  asio::ip::tcp::endpoint(
+                      asio::ip::tcp::tcp::v4(), 
+                      Config::getUInt16(Config::SECTION_BASIC, Config::CHECKIN_SERVICE_PORT))),
           id_service_verifier(openssl::EnvelopeKey::from_pem_public(
                                   Config::getString(Config::SECTION_SECURITY, Config::ID_SERVICE_PUBLIC_KEY)),
                               openssl::DigestAlgorithm::SHA256),
           signer(openssl::EnvelopeKey::from_pem_private(Config::getString(Config::SECTION_SECURITY, Config::LOCAL_PRIVATE_KEY)),
                  signature_digest_algorithm) {
     load_voter_list(Config::getString(Config::SECTION_BASIC, Config::VOTER_LIST_FILE));
-    network_thread = std::thread([&] {
-        network_io_context.run();
-    });
+    /* network_thread = std::thread([&] { */
+    /*     network_io_context.run(); */
+    /* }); */
+    configure_ssl_context(ssl_context,
+                      /*"/pollbook-server/build/apps/local-test-deployment/server1/id_cert.pem",
+                      "/pollbook-server/build/apps/local-test-deployment/server1/private_key.pem", 
+                      "/pollbook-server/build/apps/local-test-deployment/server1/ca/ca_cert.pem");*/
+                      Config::getString(Config::SECTION_SECURITY, Config::CHECKIN_SERVICE_CERT),
+                      Config::getString(Config::SECTION_SECURITY, Config::LOCAL_PRIVATE_KEY),
+                      Config::getString(Config::SECTION_SECURITY, Config::CA_CERT));
 }
 
 CheckinService::~CheckinService() {
     network_io_context.stop();
-    if (network_thread.joinable()) {
-        network_thread.join();
-    }
+    network_thread.join();
+    /* if (network_thread.joinable()) { */
+    /*     network_thread.join(); */
+    /* } */
 }
 
 void CheckinService::do_accept() {
-    connection_listener.async_accept(network_io_context,
-                                     [this](const asio::error_code& error, asio::ip::tcp::socket peer) {
-                                         handle_accept(error, std::move(peer));
-                                     });
+    connection_listener.async_accept(
+            network_io_context,
+            [this](const asio::error_code& error, asio::ip::tcp::socket peer) {
+                handle_accept(error, std::move(peer));
+            });
+}
+
+void CheckinService::save_pub_key(EVP_PKEY* pubkey, std::uint32_t client_id) {
+    std::stringstream pub_key_file_path_builder;
+    pub_key_file_path_builder << Config::getString(Config::SECTION_SECURITY, Config::CLIENT_KEYS_FOLDER)
+                          << Config::getString(Config::SECTION_SECURITY, Config::CLIENT_KEY_FILE_PREFIX) << client_id << ".pem";
+    std::string pkey_file_path = pub_key_file_path_builder.str();
+    FILE* pubkey_file = fopen(pkey_file_path.c_str(), "w");
+    if (pubkey_file != nullptr) {
+        // Write the public key in PEM format
+        PEM_write_PUBKEY(pubkey_file, pubkey);
+        fclose(pubkey_file);
+    } else {
+        std::cerr << "Error opening file to write public key" << std::endl;
+    }
 }
 
 void CheckinService::handle_accept(const asio::error_code& error, asio::ip::tcp::socket new_socket) {
-    asio::ip::tcp::endpoint client_ip = new_socket.remote_endpoint();
-    logger->debug("Accepted a connection from client at {}", client_ip);
-    // Put the new socket in the map
-    client_sockets.emplace(client_ip, std::move(new_socket));
-    // Start a read for the message size
-    start_size_read(client_ip);
-    // Enqueue another accept operation for the connection listener so it keeps listening
-    do_accept();
+    if (!error) {
+        /* auto ssl_stream = std::make_shared<asio::ssl::stream<asio::ip::tcp::socket>>(std::move(new_socket), ssl_context); */
+        auto client_ip = new_socket.remote_endpoint();
+        auto ssl_stream_ptr = std::make_shared<asio::ssl::stream<asio::ip::tcp::socket>>(std::move(new_socket), ssl_context);
+
+        ssl_stream_ptr->async_handshake(asio::ssl::stream_base::server,
+            [this, ssl_stream_ptr, client_ip](const asio::error_code& handshake_error) {
+                if (!handshake_error) {
+                    // The handshake was successful
+                    // You can now read or write to the socket
+                    /* asio::ip::tcp::endpoint client_ip = new_socket.remote_endpoint(); */
+                    /*auto client_ip = ssl_stream_ptr->lowest_layer().remote_endpoint();*/
+                    X509* clientCert = SSL_get0_peer_certificate(ssl_stream_ptr->native_handle());
+
+                    if (clientCert != nullptr) {
+                        std::uint32_t client_id = get_client_id_from_cert(clientCert);
+                        // Extract the public key from the certificate
+                        EVP_PKEY* pubkey = X509_get_pubkey(clientCert);
+                        if (pubkey != nullptr) {
+                            // Open a file to write the public key
+                            save_pub_key(pubkey, client_id);
+                            // Clean up
+                            EVP_PKEY_free(pubkey);
+                        } else {
+                            std::cerr << "Error extracting public key" << std::endl;
+                        }
+                        // Clean up
+                        X509_free(clientCert);
+                    } else {
+                        std::cerr << "No certificate received from client" << std::endl;
+                    }
+                    client_ssl_streams[client_ip] = ssl_stream_ptr;
+                    logger->debug("Accepted a connection from client at {}", client_ip);
+                    // Put the new socket in the map
+                    /*client_sockets.emplace(client_ip, ssl_stream_ptr);*/
+                    // Start a read for the message size
+                    start_size_read(client_ip);
+                    // Enqueue another accept operation for the connection listener so it keeps listening
+                    do_accept();
+                }
+                else {
+                    logger->warn("Handshake failed: {}", handshake_error.message());
+                }
+            });
+    }
 }
 
+void CheckinService::configure_ssl_context(asio::ssl::context& ssl_context, 
+                           const std::string& cert_file, 
+                           const std::string& key_file, 
+                           const std::string& ca_file) {
+    ssl_context.use_certificate_chain_file(cert_file);
+    ssl_context.use_private_key_file(key_file, asio::ssl::context::pem);
+    ssl_context.set_verify_mode(asio::ssl::verify_peer);
+    ssl_context.load_verify_file(ca_file);
+    ssl_context.set_verify_callback(
+        [](bool preverified, asio::ssl::verify_context& ctx) -> bool {
+            return preverified;
+        });
+}
+
+std::uint32_t CheckinService::get_client_id_from_cert(X509* cert) {
+    char cn[256];
+    X509_NAME* subject = X509_get_subject_name(cert);
+    X509_NAME_get_text_by_NID(subject, NID_commonName, cn, sizeof(cn));
+    std::string s = std::string(cn);
+    std::stringstream ss(s);
+
+    std::string id_str;
+    std::getline(ss, id_str, ' ');
+    std::getline(ss, id_str, ' ');
+    std::uint32_t id = static_cast<std::uint32_t>(std::stoul(id_str));
+    return id;
+}
 void CheckinService::start_size_read(asio::ip::tcp::endpoint client_ip) {
     // Creating shared pointers to hold message size and message content.
     auto message_size = std::make_shared<std::size_t>();
@@ -62,7 +154,7 @@ void CheckinService::start_size_read(asio::ip::tcp::endpoint client_ip) {
         client_buffers[client_ip] = std::make_shared<asio::streambuf>();
     }
     // Asynchronous read until a newline character to get the message size.
-    asio::async_read_until(client_sockets.at(client_ip), *client_buffers[client_ip], "\n", 
+    asio::async_read_until(*(client_ssl_streams.at(client_ip)), *client_buffers[client_ip], "\n", 
         [this, client_ip, message_size, msg_size_str, msg](const asio::error_code& error, std::size_t bytes_read) {
             if (!error) {
                 // Successfully read the message size.
@@ -92,7 +184,7 @@ void CheckinService::start_payload_read(asio::ip::tcp::endpoint client_ip, std::
         client_buffers[client_ip] = std::make_shared<asio::streambuf>();
     }
     // Asynchronous read until a newline character to get the payload.
-    asio::async_read_until(client_sockets.at(client_ip), *client_buffers[client_ip], "\n",
+    asio::async_read_until(*(client_ssl_streams.at(client_ip)), *client_buffers[client_ip], "\n",
             [this, client_ip, size_of_message, msg](const asio::error_code& error, std::size_t bytes_read) {
                 if (!error) {
                     // Successfully read the payload.
@@ -129,6 +221,27 @@ void CheckinService::start_payload_read(asio::ip::tcp::endpoint client_ip, std::
     });
 }
 
+std::string CheckinService::generate_secret(int length) {
+    unsigned char buffer[length];
+    if (RAND_bytes(buffer, length) != 1) {
+        throw std::runtime_error("Failed to generate secret");
+    }
+    std::stringstream ss;
+    for (int i = 0; i < length; i++) {
+        ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(buffer[i]);
+    }
+    return ss.str();
+}
+
+void CheckinService::write_to_csv(const std::string& ticket, const std::string& secret, const std::uint32_t& id) {
+    std::ofstream file("ticket_validation.csv", std::ios::app);
+    if (file.is_open()) {
+        file << ticket << "," << secret << "," << id << std::endl;
+        file.close();
+    } else
+        logger->warn("Error: Unable to write to CSV file");
+}
+
 void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& client_ip, const CheckinRequest& request) {
     // Ensure the public key for this client is in memory
     if(client_verifiers.find(request.body.client_id_num) == client_verifiers.end()) {
@@ -162,22 +275,38 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
     // Sign the body of the response message with the service's key
     std::string response_body_str = CheckinResponse::Body::ToJson(response_body).dump();
 
+    /* uuid_t uuid; */
+    /* chat uuid_str; */
+    /* uuid_generate(uuid); */
+    /* uuid_unparse(uuid, uuid_str); */
+    std::string ticket;
+    std::string secret;
+    if (accept) {
+        ticket = generate_secret(16);
+        secret = generate_secret(32);
+        client_tickets_map[request.body.voter_unique_id] = std::make_pair(ticket, secret);
+        write_to_csv(ticket, secret, request.body.voter_unique_id);
+    } else {
+        ticket = "";
+        secret = "";
+    }
+
+
     signer.init();
     signer.add_bytes(response_body_str.data(), response_body_str.size());
     // Serialize and send the response message, including the signature
-    CheckinResponse response(std::move(response_body), signer.finalize());
-    
+    Client client_type = Client::FirstClient;
+    CheckinResponse response(std::move(response_body), signer.finalize(), client_type, ticket);
+ 
     // convert response into json and convert it into a string
-    logger->debug("Serializing response");
     nlohmann::json response_json = CheckinResponse::ToJson(response);
 
-    logger->debug("sending message");
     std::size_t response_size = response_json.size();
     std::string response_message_string = response_json.dump();
     std::string response_string = std::to_string(response_size) + "\n" + response_message_string +"\n";
 
     logger->debug("Sending a response of size {} to client at {}", response_size, client_ip);
-    asio::write(client_sockets.at(client_ip), asio::buffer(response_string));
+    asio::write(*(client_ssl_streams.at(client_ip)), asio::buffer(response_string));
     // Enqueue another read operation for the next message from this client (if any)
     start_size_read(client_ip);
 }

@@ -4,8 +4,12 @@
 #include "log_utils.hpp"
 #include "openssl/signature.hpp"
 #include "voter_id_request.hpp"
+#include "openssl/openssl_exception.hpp"
 
 #include <asio.hpp>
+#include <asio/ssl.hpp>
+#include <asio/ssl/context.hpp>
+#include <iostream>
 #include <cstdint>
 #include <future>
 #include <string>
@@ -26,10 +30,15 @@ private:
     asio::io_context network_io_context;
     /** Work guard for the network IO context, to keep its run() thread alive while the client is idle */
     asio::executor_work_guard<asio::io_context::executor_type> network_work_guard;
+    /* A variable for ssl context for id server with tls ver 12 */ 
+    asio::ssl::context ssl_context_id;
+    /* A variable for ssl context for checkin server with tls ver 12 */ 
+    asio::ssl::context ssl_context_checkin;
     /** The socket to use to communicate with the check-in server */
-    asio::ip::tcp::socket checkin_server_socket;
+    asio::ssl::stream<asio::ip::tcp::socket> checkin_server_socket;
     /** The socket used to communicate with the voter-ID server */
-    asio::ip::tcp::socket id_server_socket;
+    asio::ssl::stream<asio::ip::tcp::socket> id_server_socket;
+    /* asio::ip::tcp::socket id_server_socket; */
     /**
      * True if the client has been connected to a check-in server, false if
      * connect_checkin_server() has not yet been called.
@@ -99,6 +108,11 @@ public:
      * Connects the client to a check-in server, identified by its hostname (which
      * could be just an IP address) and port. This is a blocking, synchronous method.
      */
+    void configure_ssl_context(asio::ssl::context& ssl_context, 
+                               asio::ssl::stream<asio::ip::tcp::socket>& socket,
+                               const std::string& cert_file, 
+                               const std::string& key_file, 
+                               const std::string& ca_file);
     void connect_checkin_server(const std::string& server_hostname, const std::string& server_port);
 
     /**
@@ -106,6 +120,7 @@ public:
      * hostname and port. This method blocks until the server is connected.
      */
     void connect_id_server(const std::string& server_hostname, const std::string& server_port);
+    void make_handshake(const std::string& host, const std::string& port, bool is_id_server);
 
     /* --- Various asynchronous I/O event handlers for receiving messages from the servers --- */
 

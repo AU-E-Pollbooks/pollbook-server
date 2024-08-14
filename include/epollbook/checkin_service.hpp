@@ -5,6 +5,9 @@
 
 #include <spdlog/spdlog.h>
 #include <asio.hpp>
+#include <asio/ssl.hpp>
+#include <asio/ssl/context.hpp>
+#include <iostream>
 
 #include <cstdint>
 #include <map>
@@ -33,6 +36,11 @@ private:
     /** The io_context that all the sockets will use */
     asio::io_context network_io_context;
     std::thread network_thread;
+
+    /**
+     * A variable for ssl context with TLS ver 12
+    */
+    asio::ssl::context ssl_context;
     /**
      * A "server socket" that listens for incoming connections from clients
      */
@@ -41,6 +49,7 @@ private:
      * Maps a client IP address to a socket connected to that client
      */
     std::map<asio::ip::tcp::endpoint, asio::ip::tcp::socket> client_sockets;
+    std::map<asio::ip::tcp::endpoint, std::shared_ptr<asio::ssl::stream<asio::ip::tcp::socket>>> client_ssl_streams;
     /**
      * Maps a client IP address to a byte buffer currently being used to
      * receive a message from that client.
@@ -57,6 +66,10 @@ private:
      * service.
      */
     openssl::Verifier id_service_verifier;
+    /* 
+     * A map between client id and client's tickets and local secrets 
+     */
+    std::map<std::uint32_t, std::pair<std::string, std::string>> client_tickets_map;
     /**
      * The Signer object the server uses to sign messages, which is configured
      * with the service's signing key.
@@ -69,7 +82,14 @@ private:
      * not be a registered voter in this district.
      */
     std::map<std::uint32_t, VoterStatus> voter_status_table;
-
+    /**
+     * Gets client id from the certificate
+     */
+    std::uint32_t get_client_id_from_cert(X509* cert);
+    /**
+     * saves public key into a folder
+     */
+    void save_pub_key(EVP_PKEY* pubkey, std::uint32_t client_id);
     /**
      * Handler function for ASIO accept events.
      */
@@ -79,6 +99,14 @@ private:
      * Starts an asynchronous accept request on the connection listener.
      */
     void do_accept();
+
+    /**
+     * 
+    */
+    void configure_ssl_context(asio::ssl::context& ssl_context,
+                               const std::string& cert_file,
+                               const std::string& key_file,
+                               const std::string& ca_file);
 
     /**
      * Starts an asynchronous read on the socket for the specified client
@@ -103,6 +131,8 @@ private:
      * @param client_ip The IP address of the client that sent the request
      * @param request The deserialized CheckinRequest object containing the client's message
      */
+    std::string generate_secret(int length);
+    void write_to_csv(const std::string& ticket, const std::string& secret, const std::uint32_t& id);
     void handle_checkin_request(const asio::ip::tcp::endpoint& client_ip, const CheckinRequest& request);
 
     /**
