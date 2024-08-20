@@ -64,6 +64,17 @@ struct TicketRequest {
         return json;
     }
     static TicketRequest FromJson(const nlohmann::json& json) {
+        if (!json.contains("body") || !json.contains("signature")) {
+            throw std::runtime_error("Missing 'body' or 'signature' in JSON");
+        }
+        const auto& body = json["body"];
+        if (!body.is_object() ||
+            !body.contains("client_id") ||
+            !body.contains("voter_unique_id") ||
+            !body.contains("timestamp") ||
+            !body.contains("ticket")) {
+            throw std::runtime_error("Invalid or incomplete 'body' structure in JSON");
+        }
         TicketRequest::Body request_body(
             json["body"]["client_id"],
             json["body"]["voter_unique_id"],
