@@ -8,7 +8,7 @@
  * individually in every source file that contains a logging statement.
  */
 
-#include <fmt/ranges.h>
+// #include <fmt/ranges.h>
 #include <spdlog/fmt/bin_to_hex.h>
 #include <spdlog/fmt/ostr.h>
 #include <spdlog/spdlog.h>

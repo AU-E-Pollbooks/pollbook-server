@@ -106,11 +106,15 @@ void CheckinService::handle_accept(const asio::error_code& error, asio::ip::tcp:
                                     // it->second = std::move(envelope_key);
                                 } else {
                                     logger->debug("Public key matches for client ID {}", client_id);
+                                    openssl::Verifier client_verifier(envelope_key, signature_digest_algorithm);
+                                    client_verifiers.emplace(client_id, std::move(client_verifier));
                                 }
                             } else {
                                 // New client
                                 logger->info("New client connected with ID {}", client_id);
                                 save_pub_key(envelope_key, client_id);
+                                openssl::Verifier client_verifier(envelope_key, signature_digest_algorithm);
+                                client_verifiers.emplace(client_id, std::move(client_verifier));
                                 client_public_keys.emplace(client_id, envelope_key);
                             }
 
@@ -129,7 +133,7 @@ void CheckinService::handle_accept(const asio::error_code& error, asio::ip::tcp:
                     } else {
                         logger->error("No certificate received from client");
                     }
-                    // if(isValidConnection) {
+                    // Clean up
                     client_ssl_streams[client_ip] = ssl_stream_ptr;
                     logger->debug("Accepted a connection from client at {}", client_ip);
                     // }
@@ -174,6 +178,7 @@ std::uint32_t CheckinService::get_client_id_from_cert(X509* cert) {
     std::uint32_t id = static_cast<std::uint32_t>(std::stoul(id_str));
     return id;
 }
+
 void CheckinService::start_size_read(asio::ip::tcp::endpoint client_ip) {
     // Creating shared pointers to hold message size and message content.
     auto message_size = std::make_shared<std::size_t>();
@@ -215,10 +220,29 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
     try {
         json = nlohmann::json::parse(msg_string);
     } catch(nlohmann::json::parse_error& err) {
-        logger->error("Failed to parse message as JSON due to error: {}", err.what());
+        logger->error("Failed to parse message as Trusted Client JSON due to error: {}", err.what());
         return;
     }
-    TicketRequest request = TicketRequest::FromJson(json);
+    std::unique_ptr<TicketRequest> req;
+    // std::optional<TicketRequest> request;
+    try {
+        auto req = std::make_unique<TicketRequest>(TicketRequest::FromJson(json));
+    } catch (const nlohmann::json::exception& ex) {
+        logger->warn("JSON parsing error: {}", ex.what());
+        return;
+    } catch (const std::runtime_error& ex) {
+        logger->warn("TicketRequest creation error: {}", ex.what());
+        return;
+    } catch (const std::exception& ex) {
+        logger->warn("Unexpected error: {}", ex.what());
+        return;
+    }
+
+    TicketRequest request = std::move(*req);
+    uint32_t client_id = client_id_map[client_ip];
+    if (request.body.client_id != client_id) {
+        logger->warn("Client ID in the message and the client ID in the public do not match!");
+    }
     std::map<std::string, std::string> voter_info;
     if(client_verifiers.find(request.body.client_id) == client_verifiers.end()) {
         if(!load_client_public_key(request.body.client_id)) {
@@ -235,7 +259,7 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
 
     if(!verifier.finalize(request.signature)) {
         logger->debug("Rejecting client {}'s request because the client's signature on the message was invalid",
-                      request.body.client_id);
+                    request.body.client_id);
         return;
     }
 
@@ -342,15 +366,16 @@ void CheckinService::start_payload_read(asio::ip::tcp::endpoint client_ip, std::
                             }
                             case ClientType::UntrustedClient: {
                                 logger->debug("Received a message from an untrusted client: {}", msg_string);
+                                nlohmann::json json;
                                 try {
                                     // Parse the JSON payload.
-                                    nlohmann::json json = nlohmann::json::parse(msg_string);
-                                    CheckinRequest request = CheckinRequest::FromJson(json);
-                                    handle_checkin_request(client_ip, request);
+                                    json = nlohmann::json::parse(msg_string);
                                 } catch(const nlohmann::json::parse_error& e) {
                                     // Failed to parse the JSON payload.
                                     logger->debug("Failed to parse JSON: {}", e.what());
                                 }
+                                CheckinRequest request = CheckinRequest::FromJson(json);
+                                handle_checkin_request(client_ip, request);
                                 break;
                             }
                         }
@@ -422,6 +447,11 @@ void CheckinService::write_to_csv(const std::string& ticket, const std::string& 
 }
 
 void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& client_ip, const CheckinRequest& request) {
+    // Ensure the client id in the message is the same as the client id in the pubkey
+    uint32_t client_id = client_id_map[client_ip];
+    if (request.body.client_id_num != client_id) {
+        logger->warn("Client ID in the message and the client ID in the public do not match!");
+    }
     // Ensure the public key for this client is in memory
     if(client_verifiers.find(request.body.client_id_num) == client_verifiers.end()) {
         if(!load_client_public_key(request.body.client_id_num)) {
@@ -538,7 +568,10 @@ bool CheckinService::load_client_public_key(std::uint32_t client_id) {
                           << Config::getString(Config::SECTION_SECURITY, Config::CLIENT_KEY_FILE_PREFIX) << client_id << ".pem";
     std::string key_file_path = key_file_path_builder.str();
     try {
-        openssl::Verifier client_verifier(openssl::EnvelopeKey::from_pem_public(key_file_path), signature_digest_algorithm);
+        
+        openssl::EnvelopeKey envelope_key(openssl::EnvelopeKey::from_pem_public(key_file_path));
+        client_public_keys.emplace(client_id, envelope_key);
+        openssl::Verifier client_verifier(envelope_key, signature_digest_algorithm);
         client_verifiers.emplace(client_id, std::move(client_verifier));
     } catch(openssl::openssl_error& err) {
         logger->error("Could not load public key for client {} from file {}. OpenSSL error: {}", client_id, key_file_path, err.what());
@@ -646,7 +679,7 @@ std::unordered_set<uint32_t> CheckinService::load_trusted_clients(const std::str
             trusted_clients.insert(client_id);
         }
     }
-    logger->debug("Loaded the set of trusted client IDs from file {}: {}", filename, trusted_clients);
+    // logger->debug("Loaded the set of trusted client IDs from file {}: {}", filename, trusted_clients);
     return trusted_clients;
 }
 
