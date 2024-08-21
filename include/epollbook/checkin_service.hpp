@@ -70,6 +70,7 @@ private:
      */
     std::map<asio::ip::tcp::endpoint, asio::ip::tcp::socket> client_sockets;
     std::map<asio::ip::tcp::endpoint, std::shared_ptr<asio::ssl::stream<asio::ip::tcp::socket>>> client_ssl_streams;
+    std::unordered_set<uint32_t> trusted_clients;
     /**
      * Maps a client IP address to a byte buffer currently being used to
      * receive a message from that client.

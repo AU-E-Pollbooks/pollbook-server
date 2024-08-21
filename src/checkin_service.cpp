@@ -31,6 +31,7 @@ CheckinService::CheckinService()
     /* network_thread = std::thread([&] { */
     /*     network_io_context.run(); */
     /* }); */
+    std::unordered_set<uint32_t> trusted_clients = load_trusted_clients("trusted_clients.txt");
     load_client_public_keys();
     configure_ssl_context(ssl_context,
                           Config::getString(Config::SECTION_SECURITY, Config::CHECKIN_SERVICE_CERT),
@@ -118,13 +119,15 @@ void CheckinService::handle_accept(const asio::error_code& error, asio::ip::tcp:
                                 client_public_keys.emplace(client_id, envelope_key);
                             }
 
-                            std::unordered_set<uint32_t> trusted_clients = load_trusted_clients("trusted_clients.txt");
-                            if (trusted_clients.find(client_id) != trusted_clients.end()) {
-                                logger->debug("Adding a new trusted client: ID {}", client_id);
-                                add_client(client_id, ClientType::TrustedClient);
-                            } else {
-                                logger->debug("Adding a new untrusted client: ID {}", client_id);
-                                add_client(client_id, ClientType::UntrustedClient);
+                            // std::unordered_set<uint32_t> trusted_clients = load_trusted_clients("trusted_clients.txt");
+                            if (clients.find(client_id) == clients.end()) {
+                                if (trusted_clients.find(client_id) != trusted_clients.end()) {
+                                    logger->debug("Adding a new trusted client: ID {}", client_id);
+                                    add_client(client_id, ClientType::TrustedClient);
+                                } else {
+                                    logger->debug("Adding a new untrusted client: ID {}", client_id);
+                                    add_client(client_id, ClientType::UntrustedClient);
+                                }
                             }
                         } else {
                             logger->error("Error extracting public key for client ID {}", client_id);
@@ -241,7 +244,7 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
     TicketRequest request = std::move(*req);
     uint32_t client_id = client_id_map[client_ip];
     if (request.body.client_id != client_id) {
-        logger->warn("Client ID in the message and the client ID in the public do not match!");
+        logger->warn("Ct ID in the message and the client ID in the public do not match!");
     }
     std::map<std::string, std::string> voter_info;
     if(client_verifiers.find(request.body.client_id) == client_verifiers.end()) {
