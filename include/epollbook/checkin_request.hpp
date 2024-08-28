@@ -148,20 +148,23 @@ struct CheckinResponse {
          * agreed upon by the pollbook system and the voter ID service.
          */
         std::uint32_t voter_unique_id;
+        std::string ticket;
         Body(bool approved,
              std::uint32_t requesting_client_id,
              std::uint64_t timestamp,
              const std::string& last_name,
              const std::string& first_name,
              const std::string& middle_name,
-             std::uint32_t voter_unique_id)
+             std::uint32_t voter_unique_id,
+             std::string ticket)
                 : approved(approved),
                   requesting_client_id(requesting_client_id),
                   timestamp(timestamp),
                   last_name(last_name),
                   first_name(first_name),
                   middle_name(middle_name),
-                  voter_unique_id(voter_unique_id) {}
+                  voter_unique_id(voter_unique_id),
+                  ticket(ticket) {}
         /* DEFAULT_SERIALIZATION_SUPPORT(Body, approved, requesting_client_id, timestamp, last_name, first_name, middle_name, voter_unique_id); */
 
         static nlohmann::json ToJson(const CheckinResponse::Body& body) {
@@ -174,6 +177,7 @@ struct CheckinResponse {
             json["first_name"] = body.first_name;
             json["middle_name"] = body.middle_name;
             json["voter_unique_id"] = body.voter_unique_id;
+            json["ticket"] = body.ticket;
 
             return json;
         }
@@ -186,14 +190,11 @@ struct CheckinResponse {
     /**
      * Randomly generated nonce that is sent after validation 
      */
-    std::string ticket;
 
     CheckinResponse(const Body& message_body,
-                    const std::vector<std::uint8_t>& checkin_service_signature,
-                    const std::string& client_ticket)
+                    const std::vector<std::uint8_t>& checkin_service_signature)
             : body(message_body),
-              checkin_service_signature(checkin_service_signature),
-              ticket(client_ticket) {}
+              checkin_service_signature(checkin_service_signature) {}
 
     // Functions to convert json to a response and vice versa
     static nlohmann::json ToJson(const CheckinResponse& response) {
@@ -201,7 +202,6 @@ struct CheckinResponse {
         std::string signature_base64 = Base64::encode(response.checkin_service_signature.data(), response.checkin_service_signature.size());
         json["body"] = CheckinResponse::Body::ToJson(response.body);
         json["checkin_service_signature"] = signature_base64;
-        json["ticket"] = response.ticket;
         return json;
     }
 
@@ -213,10 +213,11 @@ struct CheckinResponse {
                 json["body"]["last_name"],
                 json["body"]["first_name"],
                 json["body"]["middle_name"],
-                json["body"]["voter_unique_id"]);
+                json["body"]["voter_unique_id"],
+                json["body"]["ticket"]);
 
         std::vector<std::uint8_t> service_signature = Base64::decode(json["checkin_service_signature"]);
-        CheckinResponse response(std::move(response_body), service_signature, json["ticket"]);
+        CheckinResponse response(std::move(response_body), service_signature);
 
         return response;
     }

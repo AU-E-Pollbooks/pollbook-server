@@ -292,7 +292,7 @@ void PollbookClient::handle_checkin_response(const CheckinResponse& response) {
         current_request_promise.set_value({false, "Invalid signature on check-in service's response. OpenSSL error: " +
                                                       openssl::get_error_string(ERR_get_error(), "")});
     } else if(response.body.approved) {
-        logger->debug("Checkin service Ticket: {}", response.ticket);
+        logger->debug("Checkin service Ticket: {}", response.body.ticket);
         current_request_promise.set_value({true, ""});
     } else {
         current_request_promise.set_value({false, "Check-in service rejected the request"});

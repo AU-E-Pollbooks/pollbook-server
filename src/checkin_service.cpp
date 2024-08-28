@@ -481,11 +481,6 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
         }
     }
 
-    CheckinResponse::Body response_body(accept, request.body.client_id_num,
-                                        current_timestamp, request.body.last_name, request.body.first_name,
-                                        request.body.middle_name, request.body.voter_unique_id);
-    // Sign the body of the response message with the service's key
-    std::string response_body_str = CheckinResponse::Body::ToJson(response_body).dump();
 
     std::string ticket;
     std::string secret;
@@ -498,12 +493,17 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
         ticket = "";
         secret = "";
     }
+    CheckinResponse::Body response_body(accept, request.body.client_id_num,
+                                        current_timestamp, request.body.last_name, request.body.first_name,
+                                        request.body.middle_name, request.body.voter_unique_id, ticket);
+    // Sign the body of the response message with the service's key
+    std::string response_body_str = CheckinResponse::Body::ToJson(response_body).dump();
 
 
     signer.init();
     signer.add_bytes(response_body_str.data(), response_body_str.size());
     // Serialize and send the response message, including the signature
-    CheckinResponse response(std::move(response_body), signer.finalize(), ticket);
+    CheckinResponse response(std::move(response_body), signer.finalize());
 
     // convert response into json and convert it into a string
     nlohmann::json response_json = CheckinResponse::ToJson(response);
