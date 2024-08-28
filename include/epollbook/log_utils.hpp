@@ -8,10 +8,12 @@
  * individually in every source file that contains a logging statement.
  */
 
-// #include <fmt/ranges.h>
+#include <spdlog/fmt/ranges.h>
 #include <spdlog/fmt/bin_to_hex.h>
 #include <spdlog/fmt/ostr.h>
 #include <spdlog/spdlog.h>
+
+#include <asio.hpp>
 
 #include <memory>
 #include <string>
@@ -52,3 +54,9 @@ public:
 };
 
 }  // namespace epollbook
+
+// Definitions required for the spdlog library to be able to log ASIO data types (through fmt)
+// ASIO already overloads ostream operator<< for these types, but the fmt library requires this boilerplate to be able to use it
+
+template <> struct fmt::formatter<asio::error_code> : fmt::ostream_formatter {};
+template <> struct fmt::formatter<asio::ip::tcp::endpoint> : fmt::ostream_formatter {};

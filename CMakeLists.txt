@@ -18,9 +18,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # System library dependencies
-# Note: spdlog 1.10 introduced a breaking change that is not backward-compatible (due to fmt 8.1 introducing a breaking change)
-find_package(spdlog 1.3.1...1.9.2 REQUIRED)
-find_package(OpenSSL 1.1.1 REQUIRED)
+# Note: spdlog 1.11 introduced a breaking change that is not backward-compatible (due to fmt 9.1 introducing a breaking change)
+find_package(spdlog 1.11 REQUIRED)
+find_package(OpenSSL 3.0 REQUIRED)
 find_path(ASIO_PATH asio.hpp) # Since ASIO doesn't export a CMake target, we have to find it manually
 
 # Add nlohmann json
