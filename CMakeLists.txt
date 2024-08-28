@@ -18,25 +18,19 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # System library dependencies
-# Note: spdlog 1.10 introduced a breaking change that is not backward-compatible (due to fmt 8.1 introducing a breaking change)
-find_package(spdlog 1.3.1...1.9.2 REQUIRED)
-find_package(OpenSSL 1.1.1 REQUIRED)
-find_path(ASIO_PATH asio.hpp) # Since ASIO doesn't export a CMake target, we have to find it manually
-
-# Add nlohmann json
+# Note: spdlog 1.11 introduced a breaking change that is not backward-compatible (due to fmt 9.1 introducing a breaking change)
+find_package(spdlog 1.11 REQUIRED)
+find_package(OpenSSL 3.0 REQUIRED)
 find_package(nlohmann_json 3.10.5 REQUIRED)
-
+# Since ASIO doesn't export a CMake target, we have to find it manually
+find_path(ASIO_PATH asio.hpp)
 if(ASIO_PATH STREQUAL "ASIO_PATH-NOTFOUND")
     message(FATAL_ERROR "ASIO not found. You can download it from https://think-async.com/Asio")
 endif()
 include_directories(${ASIO_PATH})
 
-# mutils library, which is required for mutils-serialization
-find_package(mutils REQUIRED)
-
 # Process CMakeLists from each source-code directory
 add_subdirectory(src/config)
-# add_subdirectory(src/mutils-serialization)
 add_subdirectory(src/openssl)
 add_subdirectory(src)
 add_subdirectory(apps)

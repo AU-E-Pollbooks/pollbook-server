@@ -571,7 +571,6 @@ bool CheckinService::load_client_public_key(std::uint32_t client_id) {
                           << Config::getString(Config::SECTION_SECURITY, Config::CLIENT_KEY_FILE_PREFIX) << client_id << ".pem";
     std::string key_file_path = key_file_path_builder.str();
     try {
-        
         openssl::EnvelopeKey envelope_key(openssl::EnvelopeKey::from_pem_public(key_file_path));
         client_public_keys.emplace(client_id, envelope_key);
         openssl::Verifier client_verifier(envelope_key, signature_digest_algorithm);
@@ -682,7 +681,7 @@ std::unordered_set<uint32_t> CheckinService::load_trusted_clients(const std::str
             trusted_clients.insert(client_id);
         }
     }
-    // logger->debug("Loaded the set of trusted client IDs from file {}: {}", filename, trusted_clients);
+    logger->debug("Loaded the set of trusted client IDs from file {}: {}", filename, trusted_clients);
     return trusted_clients;
 }
 
