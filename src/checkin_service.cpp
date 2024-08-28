@@ -31,7 +31,7 @@ CheckinService::CheckinService()
     /* network_thread = std::thread([&] { */
     /*     network_io_context.run(); */
     /* }); */
-    std::unordered_set<uint32_t> trusted_clients = load_trusted_clients("trusted_clients.txt");
+    trusted_clients = load_trusted_clients("trusted_clients.txt");
     load_client_public_keys();
     configure_ssl_context(ssl_context,
                           Config::getString(Config::SECTION_SECURITY, Config::CHECKIN_SERVICE_CERT),
@@ -229,7 +229,7 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
     std::unique_ptr<TicketRequest> req;
     // std::optional<TicketRequest> request;
     try {
-        auto req = std::make_unique<TicketRequest>(TicketRequest::FromJson(json));
+        req = std::make_unique<TicketRequest>(TicketRequest::FromJson(json));
     } catch (const nlohmann::json::exception& ex) {
         logger->warn("JSON parsing error: {}", ex.what());
         return;
