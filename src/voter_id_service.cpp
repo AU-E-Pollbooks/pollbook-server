@@ -24,6 +24,7 @@ VoterIDService::VoterIDService()
                       Config::getUInt16(Config::SECTION_BASIC, Config::ID_SERVICE_PORT))),
           signer(openssl::EnvelopeKey::from_pem_private(Config::getString(Config::SECTION_SECURITY, Config::LOCAL_PRIVATE_KEY)),
                  signature_digest_algorithm) {
+          load_client_public_keys();
           configure_ssl_context(ssl_context,
                       Config::getString(Config::SECTION_SECURITY, Config::ID_SERVICE_CERT),
                       Config::getString(Config::SECTION_SECURITY, Config::LOCAL_PRIVATE_KEY),
@@ -73,10 +74,32 @@ void VoterIDService::handle_accept(const asio::error_code& error, asio::ip::tcp:
                         // Extract the public key from the certificate
                         EVP_PKEY* pubkey = X509_get_pubkey(clientCert);
                         if (pubkey != nullptr) {
-                            // Open a file to write the public key
-                            save_pub_key(pubkey, client_id);
-                            // Clean up
-                            EVP_PKEY_free(pubkey);
+                            // // Open a file to write the public key
+                            // save_pub_key(pubkey, client_id);
+                            // // Clean up
+                            // EVP_PKEY_free(pubkey);
+                            openssl::EnvelopeKey envelope_key(pubkey);
+                            auto [it, inserted] = client_public_keys.try_emplace(client_id, envelope_key);
+                            if (!inserted) {
+                                // A key for this client_id already exists
+                                if(!(it->second == envelope_key)) {
+                                    logger->warn("Public key mismatch for client ID {}.\nOld key:\n{}, New key:\n{}",
+                                                 client_id, it->second.to_pem_public(), envelope_key.to_pem_public());
+                                    // For now, let's update the key:
+                                    // it->second = std::move(envelope_key);
+                                } else {
+                                    logger->debug("Public key matches for client ID {}", client_id);
+                                    openssl::Verifier client_verifier(envelope_key, signature_digest_algorithm);
+                                    client_verifiers.emplace(client_id, std::move(client_verifier));
+                                }
+                            } else {
+                                // New client
+                                logger->info("New client connected with ID {}", client_id);
+                                save_pub_key(envelope_key, client_id);
+                                openssl::Verifier client_verifier(envelope_key, signature_digest_algorithm);
+                                client_verifiers.emplace(client_id, std::move(client_verifier));
+                                client_public_keys.emplace(client_id, envelope_key);
+                            }
                         } else {
                             std::cerr << "Error extracting public key" << std::endl;
                         }
@@ -270,6 +293,30 @@ bool VoterIDService::load_client_public_key(std::uint32_t client_id) {
         logger->debug("Loaded public key for client #{} from file {}", client_id, key_file_path);
     } catch(openssl::openssl_error& err) {
         logger->error("Could not load public key for client {} from file {}. OpenSSL error: {}", client_id, key_file_path, err.what());
+        return false;
+    }
+    return true;
+}
+
+bool VoterIDService::load_client_public_keys() {
+    std::stringstream key_folder_path_builder;
+    key_folder_path_builder << Config::getString(Config::SECTION_SECURITY, Config::CLIENT_KEYS_FOLDER) << "/";
+    std::string key_folder_path = key_folder_path_builder.str();
+    try{
+        for(const auto &entry : std::filesystem::directory_iterator(key_folder_path)) {
+            openssl::EnvelopeKey key = openssl::EnvelopeKey::from_pem_public(entry.path());
+            std::string key_file_name = entry.path().filename().string();
+            std::string key_file_no_ext = key_file_name.substr(0, key_file_name.find_last_of("."));
+            std::string prefix_to_remove = Config::getString(Config::SECTION_SECURITY, Config::CLIENT_KEY_FILE_PREFIX);
+            std::uint32_t client_id = std::stoul(key_file_no_ext.erase(key_file_no_ext.find(prefix_to_remove), prefix_to_remove.size()));
+
+            openssl::Verifier client_verifier(key, signature_digest_algorithm);
+            client_verifiers.emplace(client_id, std::move(client_verifier));
+
+            client_public_keys.emplace(client_id, std::move(key));
+        }
+    } catch(openssl::openssl_error& err) {
+        logger->error("Could not load public keys due to openssl error {}", err.what());
         return false;
     }
     return true;
