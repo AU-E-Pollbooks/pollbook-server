@@ -72,6 +72,10 @@ private:
      */
     openssl::Signer signer;
     /**
+     * A map between client id and client public key
+    */
+    std::map<std::uint32_t, openssl::EnvelopeKey> client_public_keys;
+    /**
      * Maps a client's unique ID to a Verifier initialized with that client's
      * public key.
      */
@@ -141,6 +145,7 @@ private:
      * if it was not found in the expected location
      */
     bool load_client_public_key(std::uint32_t client_id);
+    bool load_client_public_keys();
 
 public:
     /**
