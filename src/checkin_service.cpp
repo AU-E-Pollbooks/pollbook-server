@@ -6,6 +6,7 @@
 #include <shared_mutex>
 #include <fstream>
 #include <asio.hpp>
+#include <chrono>
 #include <openssl/rand.h>
 
 #include <array>
@@ -259,6 +260,16 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
     openssl::Verifier& verifier = client_verifiers.at(request.body.client_id);
     verifier.init();
     verifier.add_bytes(request_body_str.data(), request_body_str.size());
+    // handle_verification_timeout(request.body.voter_unique_id);
+    std::shared_ptr<Timer> timer;
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        auto it = request_timers.find(request.body.voter_unique_id);
+        if (it != request_timers.end()) {
+            timer = it->second;
+            request_timers.erase(it);
+        }
+    }
 
     if(!verifier.finalize(request.signature)) {
         logger->debug("Rejecting client {}'s request because the client's signature on the message was invalid",
@@ -266,7 +277,7 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
         return;
     }
 
-    if (client_tickets_map.find(request.body.ticket) != client_tickets_map.end()) {
+    if (client_tickets_map.find(request.body.ticket) != client_tickets_map.end() && timer) {
         std::pair pair = client_tickets_map[request.body.ticket];
         id = pair.first;
         secret = pair.second;
@@ -280,6 +291,11 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
             request.body.voter_unique_id,
             secret
         );
+    
+
+        // Cancel the timer
+        timer->timer.cancel();
+
         nlohmann::json body_json = TicketResponse::Body::ToJson(response_body);
         std::string body_string = body_json.dump();
         signer.init();
@@ -318,6 +334,9 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
             logger->debug("Sent message to Client");
         } else {
             logger->debug("Failed sending message: {}", ec);
+        }
+        if (!timer) {
+            logger->warn("Request was timed out");
         }
         logger->warn("Invalid ticket");
     }
@@ -462,6 +481,7 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
             return;
         }
     }
+
     auto current_time = std::chrono::system_clock::now();
     uint64_t current_timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
                                      current_time.time_since_epoch())
@@ -474,6 +494,7 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
                 find_voter_result->second = VoterStatus::PENDING;
                 logger->debug("Accepted a check-in request for voter {} {} {} (UID {}) from client {}", request.body.first_name, request.body.middle_name, request.body.last_name, request.body.voter_unique_id, request.body.client_id_num);
                 accept = true;
+                start_timer(request.body.voter_unique_id);
             } else {
                 logger->debug("Rejecting client {}'s check-in request for {} {} {} (UID {}) because the voter has already checked in",
                               request.body.client_id_num, request.body.first_name, request.body.middle_name, request.body.last_name, request.body.voter_unique_id);
@@ -516,6 +537,28 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
     asio::write(*(client_ssl_streams.at(client_ip)), asio::buffer(response_string));
     // Enqueue another read operation for the next message from this client (if any)
     start_size_read(client_ip);
+}
+
+void CheckinService::start_timer(const std::uint32_t voter_id) {
+    auto timer = std::make_shared<Timer>(network_io_context);
+    timer->voter_id = voter_id;
+    timer->timer.expires_after(std::chrono::seconds(300));
+
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        request_timers[voter_id] = timer;
+    }
+
+    timer->timer.async_wait([this, voter_id](const std::error_code& ec) {
+        if (!ec) {
+            handle_verification_timeout(voter_id);
+        }
+    });
+}
+
+void CheckinService::handle_verification_timeout(const std::uint32_t voter_id) {
+    std::lock_guard<std::mutex> unlock(mtx);
+    request_timers.erase(voter_id);
 }
 
 bool CheckinService::validate_client_request(const CheckinRequest& request, std::uint64_t current_timestamp) {
