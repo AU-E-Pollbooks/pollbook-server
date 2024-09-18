@@ -10,6 +10,7 @@
 #include <asio/ssl/context.hpp>
 #include <iostream>
 #include <unordered_set>
+#include <chrono>
 
 #include <shared_mutex>
 #include <cstdint>
@@ -28,6 +29,13 @@ enum class VoterStatus {
 enum class ClientType {
     UntrustedClient,
     TrustedClient
+};
+
+struct Timer {
+    asio::steady_timer timer;
+    std::uint32_t voter_id;
+    Timer(asio::io_context& io_context) 
+        : timer(io_context) {}
 };
 
 class ClientInfo {
@@ -113,6 +121,8 @@ private:
     std::uint32_t get_client_id_from_cert(X509* cert);
     std::uint32_t client_id;
     std::map<asio::ip::tcp::endpoint, uint32_t> client_id_map;
+    std::mutex mtx;
+    std::unordered_map<std::uint32_t, std::shared_ptr<Timer>> request_timers;
     /**
      * saves public key into a folder
      */
@@ -200,6 +210,8 @@ private:
     // void remove_client(uint32_t client_id);
     std::map<std::string, std::string> find_voter(const std::string& csv_file_path, uint32_t id);
     std::unordered_set<uint32_t> load_trusted_clients(const std::string& filename);
+    void handle_verification_timeout(const std::uint32_t voter_id);
+    void start_timer(const std::uint32_t voter_id);
 
 public:
     /**
