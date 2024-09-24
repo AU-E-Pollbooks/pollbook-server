@@ -27,6 +27,7 @@ const std::string Config::CHECKIN_SERVICE_CERT = "checkin_service_cert";
 const std::string Config::ID_SERVICE_CERT = "id_service_cert";
 const std::string Config::LOCAL_CERT = "local_cert";
 const std::string Config::CA_CERT = "ca_cert";
+const std::string Config::TIMEOUT_INTERVAL = "timeout_interval";
 
 std::atomic<int> Config::singleton_initialized_flag = 0;
 
