@@ -541,8 +541,9 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
 
 void CheckinService::start_timer(const std::uint32_t voter_id) {
     auto timer = std::make_shared<Timer>(network_io_context);
+    int time_interval = Config::getInt32(Config::SECTION_SECURITY, Config::TIMEOUT_INTERVAL);
     timer->voter_id = voter_id;
-    timer->timer.expires_after(std::chrono::seconds(300));
+    timer->timer.expires_after(std::chrono::minutes(time_interval));
 
     {
         std::lock_guard<std::mutex> lock(mtx);

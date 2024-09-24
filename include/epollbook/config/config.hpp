@@ -150,6 +150,11 @@ public:
      * The path to the file containing the certificate for the certificate authority
     */
     static const std::string CA_CERT;
+    /**
+     * The variable for the time between when a untrusted client request shows up and 
+     * untrusted client request shows up. 
+    */
+    static const std::string TIMEOUT_INTERVAL;
 };
 
 }  // namespace epollbook
