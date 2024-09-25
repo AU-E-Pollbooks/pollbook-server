@@ -3,6 +3,7 @@
 #include "checkin_request.hpp"
 #include "openssl/signature.hpp"
 #include "openssl/envelope_key.hpp"
+#include "epollbook/faulty_clients.hpp"
 
 #include <spdlog/spdlog.h>
 #include <asio.hpp>
@@ -123,6 +124,7 @@ private:
     std::map<asio::ip::tcp::endpoint, uint32_t> client_id_map;
     std::mutex mtx;
     std::unordered_map<std::uint32_t, std::shared_ptr<Timer>> request_timers;
+    ClientMap clientMap;
     /**
      * saves public key into a folder
      */
