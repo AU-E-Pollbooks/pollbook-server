@@ -276,20 +276,24 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
                     request.body.client_id);
         return;
     }
+    voter_info = find_voter(Config::getString(Config::SECTION_BASIC, Config::VOTER_LIST_FILE),
+                            request.body.voter_unique_id);
+    if (std::to_string(request.body.pin) != voter_info["pin"]) {
+        logger->warn("Wrong Pin!");
+    }
 
     if (client_tickets_map.find(request.body.ticket) != client_tickets_map.end() && timer) {
         std::pair pair = client_tickets_map[request.body.ticket];
         id = pair.first;
         secret = pair.second;
-        voter_info = find_voter(Config::getString(Config::SECTION_BASIC, Config::VOTER_LIST_FILE),
-                                request.body.voter_unique_id);
         TicketResponse::Body response_body(
             true,
             voter_info["last_name"],
             voter_info["first_name"],
             voter_info["middle_name"],
             request.body.voter_unique_id,
-            secret
+            secret,
+            request.body.pin
         );
     
 
@@ -320,7 +324,8 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
             voter_info["first_name"],
             voter_info["middle_name"],
             request.body.voter_unique_id,
-            ""
+            "",
+            request.body.pin
         );
         nlohmann::json body_json = TicketResponse::Body::ToJson(response_body);
         std::string body_string = body_json.dump();
@@ -637,9 +642,10 @@ std::map<std::string, std::string> CheckinService::find_voter(const std::string&
     std::string line;
     while (std::getline(file, line)) {
         std::istringstream iss(line);
-        std::string uid, last_name, first_name, middle_name, addr, city, state, zip;
+        std::string uid, last_name, first_name, middle_name, addr, city, state, zip, pin_str;
 
         if (std::getline(iss, uid, ',') &&
+            std::getline(iss, pin_str, ',') &&
             std::getline(iss, last_name, ',') &&
             std::getline(iss, first_name, ',') &&
             std::getline(iss, middle_name, ',') &&
@@ -652,6 +658,7 @@ std::map<std::string, std::string> CheckinService::find_voter(const std::string&
                 voter_info["last_name"] = last_name;
                 voter_info["first_name"] = first_name;
                 voter_info["middle_name"] = middle_name;
+                voter_info["pin"] = pin_str;
                 break;
             }
         } else {

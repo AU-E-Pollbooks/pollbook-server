@@ -37,6 +37,7 @@ int main(int argc, char** argv) {
             );
     std::string first, middle, last;
     std::uint32_t voter_unique_id;
+    std::uint32_t pin;
     std::cout << "Enter the voter's last name" << std::endl;
     std::getline(std::cin, last);
     std::cout << "Enter the voter's first name" << std::endl;
@@ -48,6 +49,8 @@ int main(int argc, char** argv) {
     std::string ticket;
     std::cout << "Enter ticket for client" << std::endl;
     std::cin >> ticket;
+    std::cout << "Enter your pin" << std::endl;
+    std::cin >> pin;
 
     // Use some dummy data to represent the "image of the voter's ID" (the ID service will accept any ID data right now)
     std::vector<std::uint8_t> voter_id_data = {0x1a, 0x1b, 0x1c, 0x1d, 0x2a, 0x2b, 0x2c, 0x2d,
@@ -55,7 +58,7 @@ int main(int argc, char** argv) {
                                                0x1a, 0x1b, 0x1c, 0x1d, 0x2a, 0x2b, 0x2c, 0x2d};
 
     std::cout << "Sending a check-in request..." << std::endl;
-    auto result_future = client.verify_ticket(first, middle, last, voter_unique_id, ticket);
+    auto result_future = client.verify_ticket(first, middle, last, voter_unique_id, ticket, pin);
     // std::cout << "Awaiting the result..." << std::endl;
     // std::cout << "Connected to Check In server" << std::endl;
     epollbook::CheckinResult result = result_future.get();
