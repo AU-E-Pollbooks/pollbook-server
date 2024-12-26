@@ -210,9 +210,7 @@ public:
      * the check-in request. The future will be fulfilled when the check-in
      * service responds to the request.
      */
-    std::future<CheckinResult> verify_ticket(const std::string& first_name, const std::string& middle_name,
-                                             const std::string& last_name, const std::uint32_t voter_id,
-                                             const std::string& ticket, const std::uint32_t pin);
+    std::future<CheckinResult> verify_ticket(const std::string& ticket, const std::uint32_t pin);
     void start_verify_ticket_response_read();
     /**
      * A simple demo method that sends a string to the server. This is a blocking,

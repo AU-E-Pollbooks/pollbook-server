@@ -35,17 +35,7 @@ int main(int argc, char** argv) {
                     epollbook::Config::CHECKIN_SERVICE_PORT
                 )
             );
-    std::string first, middle, last;
-    std::uint32_t voter_unique_id;
     std::uint32_t pin;
-    std::cout << "Enter the voter's last name" << std::endl;
-    std::getline(std::cin, last);
-    std::cout << "Enter the voter's first name" << std::endl;
-    std::getline(std::cin, first);
-    std::cout << "Enter the voter's middle name" << std::endl;
-    std::getline(std::cin, middle);
-    std::cout << "Enter the voter's unique ID number" << std::endl;
-    std::cin >> voter_unique_id;
     std::string ticket;
     std::cout << "Enter ticket for client" << std::endl;
     std::cin >> ticket;
@@ -58,20 +48,11 @@ int main(int argc, char** argv) {
                                                0x1a, 0x1b, 0x1c, 0x1d, 0x2a, 0x2b, 0x2c, 0x2d};
 
     std::cout << "Sending a check-in request..." << std::endl;
-    auto result_future = client.verify_ticket(first, middle, last, voter_unique_id, ticket, pin);
-    // std::cout << "Awaiting the result..." << std::endl;
-    // std::cout << "Connected to Check In server" << std::endl;
+    auto result_future = client.verify_ticket(ticket, pin);
     epollbook::CheckinResult result = result_future.get();
     if(result.success) {
         std::cout << "Ticket verification succeeded!" << std::endl;
     } else {
         std::cout << "Ticket verification failed! Reason: " << result.failure_reason << std::endl;
     }
-
-
-    ////Send ticket to checkin server to fully check in voter
-    //client.send_string_message(ticket);
-    //std::string response = client.receive_string_message();
-    //std::cout << "Response read\n";
-    //std::cout << "Server response: " << response << std::endl;
 }
