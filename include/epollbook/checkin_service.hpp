@@ -124,6 +124,11 @@ private:
     std::map<asio::ip::tcp::endpoint, uint32_t> client_id_map;
     std::mutex mtx;
     std::unordered_map<std::uint32_t, std::shared_ptr<Timer>> request_timers;
+
+    // variable for faulty client
+    std::atomic<bool> running{true};
+    std::unique_ptr<std::thread> cleanupThread;
+    std::chrono::hours cleanup_threshold;
     ClientMap clientMap;
     /**
      * saves public key into a folder
@@ -214,6 +219,9 @@ private:
     std::unordered_set<uint32_t> load_trusted_clients(const std::string& filename);
     void handle_verification_timeout(const std::uint32_t voter_id);
     void start_timer(const std::uint32_t voter_id);
+    // faulty client functions
+    void setupFaultTracking();
+    void startFaultCleanupThread();
 
 public:
     /**

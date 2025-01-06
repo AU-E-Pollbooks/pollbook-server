@@ -26,22 +26,26 @@ struct TicketRequest {
         std::uint32_t voter_unique_id;
         std::uint64_t timestamp;
         std::string ticket;
+        std::uint32_t pin;
 
         Body(std::uint32_t client_id,
              std::uint32_t voter_unique_id,
              std::uint64_t timestamp,
-             std::string ticket) 
+             std::string ticket,
+             std::uint32_t pin) 
             : client_id(client_id),
               voter_unique_id(voter_unique_id),
               timestamp(timestamp),
-              ticket(ticket) {}
+              // ticket(ticket),
+              pin(pin){}
 
         static nlohmann::json ToJson(const TicketRequest::Body& body) {
             nlohmann::json json;
             json["client_id"] = body.client_id;
             json["voter_unique_id"] = body.voter_unique_id;
             json["timestamp"] = body.timestamp;
-            json["ticket"] = body.ticket;
+            // json["ticket"] = body.ticket;
+            json["pin"] = body.pin;
             return json;
         }
     };
@@ -72,14 +76,16 @@ struct TicketRequest {
             !body.contains("client_id") ||
             !body.contains("voter_unique_id") ||
             !body.contains("timestamp") ||
-            !body.contains("ticket")) {
+            !body.contains("ticket") ||
+            !body.contains("pin")) {
             throw std::runtime_error("Invalid or incomplete 'body' structure in JSON");
         }
         TicketRequest::Body request_body(
             json["body"]["client_id"],
             json["body"]["voter_unique_id"],
             json["body"]["timestamp"],
-            json["body"]["ticket"]
+            json["body"]["ticket"],
+            json["body"]["pin"]
         );
         std::vector<std::uint8_t> signature = Base64::decode(json["signature"]);
 
@@ -108,6 +114,7 @@ struct TicketResponse {
         * agreed upon by the pollbook system and the voter ID service.
         */
         std::uint32_t voter_unique_id;
+        std::uint32_t pin;
         std::string secret;
 
         Body(bool approved,
@@ -115,12 +122,14 @@ struct TicketResponse {
              const std::string& first_name,
              const std::string& middle_name,
              std::uint32_t voter_unique_id,
+             std::uint32_t pin,
              std::string secret)
             : approved(approved),
               last_name(last_name),
               first_name(first_name),
               middle_name(middle_name),
               voter_unique_id(voter_unique_id),
+              pin(pin),
               secret(secret) {}
 
         static nlohmann::json ToJson(const TicketResponse::Body& response) {
@@ -131,6 +140,7 @@ struct TicketResponse {
             json["first_name"] = response.first_name;
             json["middle_name"] = response.middle_name;
             json["voter_unique_id"] = response.voter_unique_id;
+            json["pin"] = response.pin;
             json["secret"] = response.secret;
 
             return json;
@@ -160,6 +170,7 @@ struct TicketResponse {
             json["body"]["first_name"],
             json["body"]["middle_name"],
             json["body"]["voter_unique_id"],
+            json["body"]["pin"],
             json["body"]["secret"]
         );
         std::vector<std::uint8_t> signature = Base64::decode(json["signature"]);

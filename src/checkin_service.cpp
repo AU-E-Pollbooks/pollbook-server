@@ -2,6 +2,7 @@
 #include "epollbook/config/config.hpp"
 #include "epollbook/log_utils.hpp"
 #include "epollbook/trusted_client_request.hpp"
+#include "epollbook/faulty_clients.hpp"
 
 #include <shared_mutex>
 #include <fstream>
@@ -28,6 +29,7 @@ CheckinService::CheckinService()
                               openssl::DigestAlgorithm::SHA256),
           signer(openssl::EnvelopeKey::from_pem_private(Config::getString(Config::SECTION_SECURITY, Config::LOCAL_PRIVATE_KEY)),
                  signature_digest_algorithm) {
+    setupFaultTracking();
     load_voter_list(Config::getString(Config::SECTION_BASIC, Config::VOTER_LIST_FILE));
     trusted_clients = load_trusted_clients("trusted_clients.txt");
     load_client_public_keys();
@@ -38,6 +40,10 @@ CheckinService::CheckinService()
 }
 
 CheckinService::~CheckinService() {
+    running = false;
+    if (cleanupThread && cleanupThread->joinable()) {
+        cleanupThread->join();
+    }
     network_io_context.stop();
     network_thread.join();
 }
@@ -96,7 +102,7 @@ void CheckinService::handle_accept(const asio::error_code& error, asio::ip::tcp:
                                 if(!(it->second == envelope_key)) {
                                     logger->warn("Public key mismatch for client ID {}.\nOld key:\n{}, New key:\n{}",
                                                  client_id, it->second.to_pem_public(), envelope_key.to_pem_public());
-                                    FaultyClientTracker::reportFault(clientMap, client_id, "Public key mismatch for client ID");
+                                    FaultTracker::getInstance().reportFault(client_id, "Public key mismatch for client ID");
                                 } else {
                                     logger->debug("Public key matches for client ID {}", client_id);
                                     openssl::Verifier client_verifier(envelope_key, signature_digest_algorithm);
@@ -135,7 +141,7 @@ void CheckinService::handle_accept(const asio::error_code& error, asio::ip::tcp:
                 }
                 else {
                     logger->warn("Handshake failed: {}", handshake_error.message());
-                    FaultyClientTracker::reportFault(clientMap, client_id, handshake_error.message());
+                    FaultTracker::getInstance().reportFault(client_id, handshake_error.message());
                 }
                 // Enqueue another accept operation for the connection listener so it keeps listening
                 do_accept();
@@ -207,7 +213,7 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
     read_from_csv();
 
     std::string ticket, secret;
-    std::uint32_t id;
+    std::uint32_t id, pin;
     nlohmann::json json;
     try {
         json = nlohmann::json::parse(msg_string);
@@ -220,15 +226,15 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
         req = std::make_unique<TicketRequest>(TicketRequest::FromJson(json));
     } catch (const nlohmann::json::exception& ex) {
         logger->warn("JSON parsing error: {}", ex.what());
-        FaultyClientTracker::reportFault(clientMap, client_id, ex.what());
+        FaultTracker::getInstance().reportFault(client_id, ex.what());
         return;
     } catch (const std::runtime_error& ex) {
         logger->warn("TicketRequest creation error: {}", ex.what());
-        FaultyClientTracker::reportFault(clientMap, client_id, ex.what());
+        FaultTracker::getInstance().reportFault(client_id, ex.what());
         return;
     } catch (const std::exception& ex) {
         logger->warn("Unexpected error: {}", ex.what());
-        FaultyClientTracker::reportFault(clientMap, client_id, ex.what());
+        FaultTracker::getInstance().reportFault(client_id, ex.what());
         return;
     }
 
@@ -236,13 +242,13 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
     uint32_t client_id = client_id_map[client_ip];
     if (request.body.client_id != client_id) {
         logger->warn("Client ID in the message and the client ID in the public do not match!");
-        FaultyClientTracker::reportFault(clientMap, client_id, "Client ID in the message and the client ID in the public do not match!");
+        FaultTracker::getInstance().reportFault(client_id, "Client ID in the message and the client ID in the public do not match!");
     }
     std::map<std::string, std::string> voter_info;
     if(client_verifiers.find(request.body.client_id) == client_verifiers.end()) {
         if(!load_client_public_key(request.body.client_id)) {
             logger->warn("Could not load the public key for client number {}. Ignoring a voter ID validation request.", request.body.client_id);
-            FaultyClientTracker::reportFault(clientMap, client_id, "Could not load the public key for client. Ignoring a voter ID validation request.");
+            FaultTracker::getInstance().reportFault(client_id, "Could not load the public key for client. Ignoring a voter ID validation request.");
             return;
         }
     }
@@ -281,6 +287,7 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
             voter_info["first_name"],
             voter_info["middle_name"],
             request.body.voter_unique_id,
+            pin,
             secret
         );
     
@@ -311,6 +318,7 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
             voter_info["last_name"],
             voter_info["first_name"],
             voter_info["middle_name"],
+            0,
             request.body.voter_unique_id,
             ""
         );
@@ -329,10 +337,10 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
         }
         if (!timer) {
             logger->warn("Request was timed out");
-            FaultyClientTracker::reportFault(clientMap, client_id, "Request was timed out");
+            FaultTracker::getInstance().reportFault(client_id, "Request was timed out");
         }
         logger->warn("Invalid ticket");
-        FaultyClientTracker::reportFault(clientMap, client_id, "Invalid ticket");
+        FaultTracker::getInstance().reportFault(client_id, "Invalid ticket");
     }
 }
 
@@ -364,14 +372,14 @@ void CheckinService::start_payload_read(asio::ip::tcp::endpoint client_ip, std::
                             auto it = client_id_map.find(client_ip);
                             if (it == client_id_map.end()) {
                                 logger->warn("Unknown client IP");
-                                FaultyClientTracker::reportFault(clientMap, client_id, "Unknown client IP");
+                                FaultTracker::getInstance().reportFault(client_id, "Unknown client IP");
                                 return;
                             }
                             client_id = it->second;
                             auto client_it = clients.find(client_id);
                             if (client_it == clients.end()) {
                                 logger->warn("Unknown client ID");
-                                FaultyClientTracker::reportFault(clientMap, client_id, "Unknown client ID");
+                                FaultTracker::getInstance().reportFault(client_id, "Unknown client ID");
                                 return;
                             }
                             type = client_it->second.type;
@@ -400,7 +408,7 @@ void CheckinService::start_payload_read(asio::ip::tcp::endpoint client_ip, std::
                     } else {
                         // Message size mismatch.
                         logger->warn("Size of the message does not match the size that is received from the server for the client {}", client_ip);
-                        FaultyClientTracker::reportFault(clientMap, client_id, "Size of the message does not match the size that is received from the server for the client ");
+                        FaultTracker::getInstance().reportFault(client_id, "Size of the message does not match the size that is received from the server for the client ");
                         client_sockets.erase(client_ip);
                     }
                 } else if(error == asio::error::eof || error == asio::error::connection_aborted) {
@@ -410,7 +418,7 @@ void CheckinService::start_payload_read(asio::ip::tcp::endpoint client_ip, std::
                 } else {
                     // Unexpected I/O error.
                     logger->warn("Unexpected I/O error when reading a request message from client {}. Error: {}", client_ip, error.message());
-                    FaultyClientTracker::reportFault(clientMap, client_id, "Size of the message does not match the size that is received from the server for the client ");
+                    FaultTracker::getInstance().reportFault(client_id, "Size of the message does not match the size that is received from the server for the client ");
                 }
     });
 }
@@ -603,7 +611,9 @@ bool CheckinService::validate_client_request(const CheckinRequest& request, std:
 void CheckinService::run() {
     // Post the first asynchronous accept
     do_accept();
-    logger->info("Check-in service started on port {}", Config::getUInt16(Config::SECTION_BASIC, Config::CHECKIN_SERVICE_PORT));
+    startFaultCleanupThread();
+    logger->info("Check-in service started on port {}", 
+                 Config::getUInt16(Config::SECTION_BASIC, Config::CHECKIN_SERVICE_PORT));
     network_io_context.run();
 }
 
@@ -725,6 +735,25 @@ std::unordered_set<uint32_t> CheckinService::load_trusted_clients(const std::str
     }
     logger->debug("Loaded the set of trusted client IDs from file {}: {}", filename, trusted_clients);
     return trusted_clients;
+}
+
+void CheckinService::setupFaultTracking() {
+    if(Config::getInstance().hasKey(Config::SECTION_BASIC, "fault_cleanup_hours")) {
+        cleanup_threshold = std::chrono::hours(
+            Config::getInt32(Config::SECTION_BASIC, "fault_cleanup_hours")
+        );
+    } else {
+        cleanup_threshold = std::chrono::hours(24);
+    }
+}
+
+void CheckinService::startFaultCleanupThread() {
+    cleanupThread = std::make_unique<std::thread>([this]() {
+        while (running) {
+            FaultTracker::getInstance().clearOldRecords(cleanup_threshold);
+            std::this_thread::sleep_for(std::chrono::hours(1));
+        }
+    });
 }
 
 }  // namespace epollbook
