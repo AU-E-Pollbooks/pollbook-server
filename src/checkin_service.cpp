@@ -30,6 +30,7 @@ CheckinService::CheckinService()
           signer(openssl::EnvelopeKey::from_pem_private(Config::getString(Config::SECTION_SECURITY, Config::LOCAL_PRIVATE_KEY)),
                  signature_digest_algorithm) {
     setupFaultTracking();
+    FaultTracker::getInstance().initializeConfig();
     load_voter_list(Config::getString(Config::SECTION_BASIC, Config::VOTER_LIST_FILE));
     trusted_clients = load_trusted_clients("trusted_clients.txt");
     load_client_public_keys();

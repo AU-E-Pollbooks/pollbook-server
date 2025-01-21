@@ -3,6 +3,8 @@
 #include <vector>
 #include <chrono>
 #include <mutex>
+#include <epollbook/config/config.hpp>
+#include <epollbook/log_utils.hpp>
 
 #ifndef FAULTY_CLIENT_H
 #define FAULTY_CLIENT_H
@@ -55,10 +57,30 @@ public:
         }
     }
 
+    void initializeConfig() {
+        try {
+            if (Config::getInstance().hasKey("FaultTracking", "cleanup_hours")) {
+                cleanup_threshold = std::chrono::hours(
+                    Config::getInt32("FaultTracking", "cleanup_hours")
+                );
+            }
+        } catch (const std::exception& e) {
+            // Default to 24 hours if config read fails
+            cleanup_threshold = std::chrono::hours(24);
+            if (auto logger = spdlog::get("server_log")) {
+                logger->info("Using default fault cleanup threshold of 24 hours");
+            }
+        }
+    }
+
+
 private:
-    FaultTracker() = default;
+    FaultTracker() {
+        initializeConfig();
+    };
     mutable std::mutex mutex;
     ClientMap clientMap;
+    std::chrono::hours cleanup_threshold{24};
 };
 }
 #endif // !FAULTY_CLIENT
