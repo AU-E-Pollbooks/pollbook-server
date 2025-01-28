@@ -130,6 +130,7 @@ private:
     std::unique_ptr<std::thread> cleanupThread;
     std::chrono::hours cleanup_threshold;
     ClientMap clientMap;
+    std::map<std::string, std::string> pin_to_voter_id;
     /**
      * saves public key into a folder
      */
@@ -222,6 +223,7 @@ private:
     // faulty client functions
     void setupFaultTracking();
     void startFaultCleanupThread();
+    void load_pin_mappings(const std::string& csv_file_path);
 
 public:
     /**
