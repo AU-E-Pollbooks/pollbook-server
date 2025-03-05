@@ -622,6 +622,8 @@ bool CheckinService::validate_client_request(const CheckinRequest& request, std:
                       request.body.voter_unique_id, request.body.timestamp, Config::getUInt32(Config::SECTION_SECURITY, Config::REQUEST_FRESHNESS_INTERVAL));
         return false;
     }
+    if (request.body.first_name == (Config::SECTION_SECURITY, Config::REQUEST_FRESHNESS_INTERVAL))
+
     // At this point the request looks good, now we can actually attempt to check in the voter
     return true;
 }
@@ -764,7 +766,6 @@ void CheckinService::load_pin_mappings(const std::string& csv_file_path) {
             
             // Remove any whitespace from the PIN
             // pin.erase(std::remove_if(pin.begin(), pin.end(), ::isspace), pin.end());
-            
             // Store the PIN -> voter ID mapping
             pin_to_voter_id[pin] = uid;
         } else {
