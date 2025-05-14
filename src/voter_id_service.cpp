@@ -213,6 +213,63 @@ void VoterIDService::save_pub_key(EVP_PKEY* pubkey, std::uint32_t client_id) {
 }
 
 
+// Function to load voter data
+void VoterIDService::load_voter_data_from_csv() {
+    std::ifstream file("voter.csv", std::ios::in);
+    if (!file.is_open()) {
+        logger->error("Error opening voter registry file");
+        return;
+    }
+    
+    std::string line;
+    // Skip header if it exists
+    std::getline(file, line);
+    
+    // Process each line
+    while (std::getline(file, line)) {
+        std::vector<std::string> fields;
+        std::stringstream ss(line);
+        std::string field;
+        
+        while (std::getline(ss, field, ',')) {
+            fields.push_back(field);
+        }
+        
+        if (fields.size() < 9) {
+            logger->warn("Invalid line format: {}", line);
+            continue;
+        }
+        
+        try {
+            std::uint32_t uid = static_cast<std::uint32_t>(std::stoul(fields[0]));
+            voter_data[uid] = fields;  // Store all fields as vector
+            
+            // For backward compatibility
+            std::string fullName = fields[3] + " " + fields[4] + " " + fields[2];
+            voter_id_name_map[uid] = fullName;
+        } catch (const std::exception& e) {
+            logger->warn("Error processing line: {}", line);
+        }
+    }
+    
+    logger->info("Loaded {} voter records", voter_data.size());
+}
+
+// Then modify your validation function to use this map
+bool VoterIDService::validate_voter_name(const std::string& provided_name, std::uint32_t voter_unique_id) {
+    auto it = voter_id_name_map.find(voter_unique_id);
+    if (it == voter_id_name_map.end()) {
+        logger->warn("Voter ID {} not found in registry", voter_unique_id);
+        return false;
+    }
+    
+    const std::string& registered_name = it->second;
+    
+    // You could use a simple case-insensitive comparison
+    // or implement more sophisticated name matching logic based on your requirements
+    return string_util::compare_case_insensitive(provided_name, registered_name);
+}
+
 void VoterIDService::handle_validation_request(const asio::ip::tcp::endpoint& client_ip, const VoterIDRequest& request) {
     auto current_time = std::chrono::system_clock::now();
     uint64_t current_timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -231,8 +288,33 @@ void VoterIDService::handle_validation_request(const asio::ip::tcp::endpoint& cl
         logger->warn("Rejected a voter ID validation request because the ID data was not valid.");
         return;
     }
+    // Enhanced validation using voter_data
+    if (voter_data.find(voter_unique_id) == voter_data.end()) {
+        logger->warn("Rejected a voter ID validation request because the UID {} was not found in the registry.", voter_unique_id);
+        return;
+    }
+    
+    
+    if (voter_data.find(voter_unique_id) == voter_data.end()) {
+        logger->warn("Rejected a voter ID validation request because the UID {} was not found in the registry.", voter_unique_id);
+        return;
+    }
+    const auto& voter_record = voter_data[voter_unique_id];
+    
+    
+    // Validate address if provided
+    // if (!) {
+    //     std::string stored_address = voter_record[5] + ", " + voter_record[6] + ", " + voter_record[7] + " " + voter_record[8];
+    //     if (request.body.address != stored_address) {
+    //         logger->warn("Rejected a voter ID validation request because the address didn't match.");
+    //         return;
+    //     }
+    // }
+    if (!validate_voter_name(request.body.voter_name, voter_unique_id)) {
+        pass
+    }
     // Ensure the public key for this client is in memory
-    if(client_verifiers.find(request.body.client_id_num) == client_verifiers.end()) {
+    if(client_verifiers.find(request.body.client_id_num // Maps voter ID to name) == client_verifiers.end()) {
         //Below we put public key into client keys folder to be able to verify later
 
         if(!load_client_public_key(request.body.client_id_num)) {
@@ -252,9 +334,16 @@ void VoterIDService::handle_validation_request(const asio::ip::tcp::endpoint& cl
         return;
     }
     logger->info("Approved a voter ID validation request from client #{} at {}, voter's UID is {}", request.body.client_id_num, client_ip, voter_unique_id);
+    if (voter_unique_id != INVALID_VOTER_ID) {
+        bool name_valid = validate_voter_name(request.body.voter_name, voter_unique_id);
+        if (!name_valid) {
+            logger->warn("Rejected a voter ID validation request because the name did not match the ID.");
+            return;
+        }
+    }
+
 
     // Sign the validation request and the unique voter ID
-    // The request was already serialized, in the receive buffer, so there's no need to serialize it again
     nlohmann::json body_json;
     body_json["presented_id"] = VoterIDRequest::ToJson(request);
     body_json["voter_unique_id"] = voter_unique_id;
@@ -262,16 +351,13 @@ void VoterIDService::handle_validation_request(const asio::ip::tcp::endpoint& cl
     signer.init();
     signer.add_bytes(request_body_str.data(), request_body_str.size());
     std::vector<std::uint8_t> signature = signer.finalize();
-    // Send it back in a response. For now, the write is synchronous, since we don't expect it to take very long.
+    
+    // Send it back in a response
     VerifiedVoterID response(request, voter_unique_id, std::move(signature));
-
-    //
     nlohmann::json response_json = VerifiedVoterID::ToJson(response);
-
     std::size_t response_size = response_json.size();
     std::string response_msg_str = response_json.dump();
     std::string buffer = response_msg_str + "\n";
-
     logger->debug("Sending a response of size {} to client at {}", response_size, client_ip);
     asio::write(*(client_ssl_streams.at(client_ip)), asio::buffer(buffer));
 }

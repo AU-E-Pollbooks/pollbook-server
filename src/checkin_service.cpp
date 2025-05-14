@@ -280,12 +280,33 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
     verifier.add_bytes(request_body_str.data(), request_body_str.size());
     // handle_verification_timeout(request.body.voter_unique_id);
     std::shared_ptr<Timer> timer;
+    bool timer_valid = false;
     {
         std::lock_guard<std::mutex> lock(mtx);
         auto it = request_timers.find(voter_id);
         if (it != request_timers.end()) {
             timer = it->second;
-            request_timers.erase(it);
+            
+            // Check if the request is within the valid time range
+            auto now = std::chrono::steady_clock::now();
+            auto expiry_time = timer->timer.expiry();
+            
+            // Get the configured timeout interval in minutes
+            int time_interval = Config::getInt32(Config::SECTION_SECURITY, Config::TIMEOUT_INTERVAL);
+            auto start_time = expiry_time - std::chrono::minutes(time_interval);
+            
+            // Check if current time is within the valid window
+            if (now >= start_time && now <= expiry_time) {
+                timer_valid = true;
+                // Remove the timer from the map since we're handling it now
+                request_timers.erase(it);
+            } else {
+                logger->warn("Trusted client request for voter ID {} is outside the valid time window", voter_id);
+                FaultTracker::getInstance().reportFault(client_id, "Request outside valid time window");
+            }
+        } else {
+            logger->warn("No timer found for voter ID {}", voter_id);
+            FaultTracker::getInstance().reportFault(client_id, "No timer found for voter ID");
         }
     }
 
@@ -295,7 +316,7 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
         return;
     }
 
-    if (client_tickets_map.find(request.body.ticket) != client_tickets_map.end() && timer) {
+    if (client_tickets_map.find(request.body.ticket) != client_tickets_map.end() && timer_valid) {
         std::pair pair = client_tickets_map[request.body.ticket];
         id = pair.first;
         secret = pair.second;

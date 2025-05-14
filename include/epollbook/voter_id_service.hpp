@@ -30,6 +30,22 @@ namespace epollbook {
  * supplies the desired unique ID in the first sizeof(uint32_t) bytes of the
  * data. The service will use this number as the ID that "matches" the data.
  */
+
+struct VoterRecord {
+    std::string pin;
+    std::string lastName;
+    std::string firstName;
+    std::string middleName;
+    std::string Address;
+    std::string city;
+    std::string state;
+    std::string zip;
+    
+    // Helper to get full name
+    std::string getFullName() const {
+        return firstName + (middleName.empty() ? " " : " " + middleName + " ") + lastName;
+    }
+};
 class VoterIDService {
 public:
     /**
@@ -80,10 +96,17 @@ private:
      * public key.
      */
     std::map<std::uint32_t, openssl::Verifier> client_verifiers;
+    std::unordered_map<std::uint32_t, std::string> voter_id_name_map;
+    std::map<std::uint32_t, std::vector<std::string>> voter_data;
     /**
      * Gets client id from the certificate
      */
     std::uint32_t get_client_id_from_cert(X509* cert);
+    /** 
+     * data structure for voter records
+     */
+    std::map<std::uint32_t, VoterRecord> voter_records;
+
     /**
      * Handler function for ASIO accept events.
      */
@@ -119,6 +142,8 @@ private:
      * been read and deserialized in the "raw" read handler.
      */
     void handle_validation_request(const asio::ip::tcp::endpoint& client_ip, const VoterIDRequest& request);
+    void load_voter_data_from_csv();
+    bool validate_voter_name(const std::string& provided_name, std::uint32_t voter_unique_id);
 
     /**
      * Examines the binary data provided by a client to represent a voter's
