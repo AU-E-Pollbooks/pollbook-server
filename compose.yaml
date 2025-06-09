@@ -1,0 +1,69 @@
+services:
+  checkin:
+    build: .
+    develop:
+      watch:
+        - path: .
+          target: /epollbook
+          action: sync
+    networks:
+      pollbook:
+        ipv4_address: 172.16.0.5
+  dummy-id:
+    build: .
+    develop:
+      watch:
+        - path: .
+          target: /epollbook
+          action: sync
+    networks:
+      pollbook:
+        ipv4_address: 172.16.0.6
+  untrusted-client-0:
+    build: .
+    develop:
+      watch:
+        - path: .
+          target: /epollbook
+          action: sync
+    networks:
+      pollbook:
+        ipv4_address: 172.16.0.10
+  trusted-client-1:
+    build: .
+    develop:
+      watch:
+        - path: .
+          target: /epollbook
+          action: sync
+    networks:
+      pollbook:
+        ipv4_address: 172.16.0.11
+  untrusted-client-2:
+    build: .
+    develop:
+      watch:
+        - path: .
+          target: /epollbook
+          action: sync
+    networks:
+      pollbook:
+        ipv4_address: 172.16.0.12
+  trusted-client-3:
+    build: .
+    develop:
+      watch:
+        - path: .
+          target: /epollbook
+          action: sync
+    networks:
+      pollbook:
+        ipv4_address: 172.16.0.13
+
+networks:
+  pollbook:
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.16.0.0/16
+          gateway: 172.16.0.1
