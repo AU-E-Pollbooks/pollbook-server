@@ -124,9 +124,13 @@ void PollbookClient::make_handshake(const std::string& host, const std::string& 
     }
 }
 
-void PollbookClient::start_id_request_write(std::uint64_t timestamp, const std::vector<std::uint8_t>& voter_id_data) {
+void PollbookClient::start_id_request_write(std::uint64_t timestamp, std::string first_name, 
+                                            std::string middle_name, std::string last_name, 
+                                            const std::vector<std::uint8_t>& voter_id_data) {
     std::uint32_t my_id = Config::getUInt32(Config::SECTION_BASIC, Config::CLIENT_ID);
-    VoterIDRequest::Body validation_request_body(my_id, timestamp, voter_id_data);
+    VoterIDRequest::Body validation_request_body(
+        my_id, timestamp, first_name, middle_name, 
+        last_name, voter_id_data);
     // Sign the body of the message
     nlohmann::json body_json = VoterIDRequest::Body::ToJson(validation_request_body);
     std::string body_string = body_json.dump();
@@ -329,7 +333,7 @@ std::future<CheckinResult> PollbookClient::check_in_voter(const std::string& fir
     // Store these in the instance variables so they can be used later to construct the check-in request
     current_request_voter_name = std::make_tuple(first_name, middle_name, last_name);
     // Start the checkin process by asynchronously scheduling the write of the ID-verification request
-    start_id_request_write(current_timestamp, voter_id_data);
+    start_id_request_write(current_timestamp, first_name, middle_name, last_name, voter_id_data);
     // Return a future that the caller can use to wait for the process to finish
     return current_request_promise.get_future();
 }

@@ -143,7 +143,12 @@ private:
      */
     void handle_validation_request(const asio::ip::tcp::endpoint& client_ip, const VoterIDRequest& request);
     void load_voter_data_from_csv();
-    bool validate_voter_name(const std::string& provided_name, std::uint32_t voter_unique_id);
+    // bool validate_voter_name(const std::string& provided_name, std::uint32_t voter_unique_id);
+    bool validate_voter_name(const std::string& first_name, 
+                            const std::string& middle_name, 
+                            const std::string& last_name,
+                            std::uint32_t voter_unique_id);
+    bool case_insensitive_equal(const std::string& a, const std::string& b);
 
     /**
      * Examines the binary data provided by a client to represent a voter's

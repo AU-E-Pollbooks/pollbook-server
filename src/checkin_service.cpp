@@ -643,7 +643,6 @@ bool CheckinService::validate_client_request(const CheckinRequest& request, std:
                       request.body.voter_unique_id, request.body.timestamp, Config::getUInt32(Config::SECTION_SECURITY, Config::REQUEST_FRESHNESS_INTERVAL));
         return false;
     }
-    if (request.body.first_name == (Config::SECTION_SECURITY, Config::REQUEST_FRESHNESS_INTERVAL))
 
     // At this point the request looks good, now we can actually attempt to check in the voter
     return true;

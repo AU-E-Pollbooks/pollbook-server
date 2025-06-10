@@ -132,6 +132,8 @@ public:
 
 
 private:
+    std::unique_ptr<std::thread> network_thread;
+    bool running;
     FaultTracker() {
         initializeConfig();
     }

@@ -25,6 +25,7 @@ VoterIDService::VoterIDService()
           signer(openssl::EnvelopeKey::from_pem_private(Config::getString(Config::SECTION_SECURITY, Config::LOCAL_PRIVATE_KEY)),
                  signature_digest_algorithm) {
           load_client_public_keys();
+          load_voter_data_from_csv();
           configure_ssl_context(ssl_context,
                       Config::getString(Config::SECTION_SECURITY, Config::ID_SERVICE_CERT),
                       Config::getString(Config::SECTION_SECURITY, Config::LOCAL_PRIVATE_KEY),
@@ -215,7 +216,7 @@ void VoterIDService::save_pub_key(EVP_PKEY* pubkey, std::uint32_t client_id) {
 
 // Function to load voter data
 void VoterIDService::load_voter_data_from_csv() {
-    std::ifstream file("voter.csv", std::ios::in);
+    std::ifstream file(Config::getString(Config::SECTION_BASIC, Config::VOTER_LIST_FILE), std::ios::in);
     if (!file.is_open()) {
         logger->error("Error opening voter registry file");
         return;
@@ -235,17 +236,17 @@ void VoterIDService::load_voter_data_from_csv() {
             fields.push_back(field);
         }
         
-        if (fields.size() < 9) {
+        if (fields.size() < 8) {
             logger->warn("Invalid line format: {}", line);
             continue;
         }
         
         try {
             std::uint32_t uid = static_cast<std::uint32_t>(std::stoul(fields[0]));
-            voter_data[uid] = fields;  // Store all fields as vector
+            voter_data[uid] = fields; 
             
             // For backward compatibility
-            std::string fullName = fields[3] + " " + fields[4] + " " + fields[2];
+            std::string fullName = fields[2] + " " + fields[3] + " " + fields[1];
             voter_id_name_map[uid] = fullName;
         } catch (const std::exception& e) {
             logger->warn("Error processing line: {}", line);
@@ -255,19 +256,23 @@ void VoterIDService::load_voter_data_from_csv() {
     logger->info("Loaded {} voter records", voter_data.size());
 }
 
+bool VoterIDService::case_insensitive_equal(const std::string& a, const std::string& b) {
+    return a.size() == b.size() &&
+           std::equal(a.begin(), a.end(), b.begin(), [](char a, char b) {
+               return std::tolower(static_cast<unsigned char>(a)) ==
+                      std::tolower(static_cast<unsigned char>(b));
+           });
+}
 // Then modify your validation function to use this map
-bool VoterIDService::validate_voter_name(const std::string& provided_name, std::uint32_t voter_unique_id) {
-    auto it = voter_id_name_map.find(voter_unique_id);
-    if (it == voter_id_name_map.end()) {
-        logger->warn("Voter ID {} not found in registry", voter_unique_id);
-        return false;
-    }
-    
-    const std::string& registered_name = it->second;
-    
-    // You could use a simple case-insensitive comparison
-    // or implement more sophisticated name matching logic based on your requirements
-    return string_util::compare_case_insensitive(provided_name, registered_name);
+bool VoterIDService::validate_voter_name(const std::string& first_name, 
+                                         const std::string& middle_name, 
+                                         const std::string& last_name,
+                                         std::uint32_t voter_unique_id) {
+    const auto& data = voter_data[voter_unique_id];
+    logger->debug("first name{} then actual firstname {}", first_name, data[3]);
+    return case_insensitive_equal(first_name, data[2]) &&
+           case_insensitive_equal(middle_name, data[3]) &&
+           case_insensitive_equal(last_name, data[1]);
 }
 
 void VoterIDService::handle_validation_request(const asio::ip::tcp::endpoint& client_ip, const VoterIDRequest& request) {
@@ -293,28 +298,17 @@ void VoterIDService::handle_validation_request(const asio::ip::tcp::endpoint& cl
         logger->warn("Rejected a voter ID validation request because the UID {} was not found in the registry.", voter_unique_id);
         return;
     }
-    
-    
-    if (voter_data.find(voter_unique_id) == voter_data.end()) {
-        logger->warn("Rejected a voter ID validation request because the UID {} was not found in the registry.", voter_unique_id);
+
+    if (!validate_voter_name(request.body.first_name, 
+                            request.body.middle_name, 
+                            request.body.last_name, 
+                            voter_unique_id)) {
+        logger->warn("Rejected a voter ID validation request because the UID {} did not match the voter name.", voter_unique_id);
         return;
     }
-    const auto& voter_record = voter_data[voter_unique_id];
     
-    
-    // Validate address if provided
-    // if (!) {
-    //     std::string stored_address = voter_record[5] + ", " + voter_record[6] + ", " + voter_record[7] + " " + voter_record[8];
-    //     if (request.body.address != stored_address) {
-    //         logger->warn("Rejected a voter ID validation request because the address didn't match.");
-    //         return;
-    //     }
-    // }
-    if (!validate_voter_name(request.body.voter_name, voter_unique_id)) {
-        pass
-    }
     // Ensure the public key for this client is in memory
-    if(client_verifiers.find(request.body.client_id_num // Maps voter ID to name) == client_verifiers.end()) {
+    if(client_verifiers.find(request.body.client_id_num) == client_verifiers.end()) {
         //Below we put public key into client keys folder to be able to verify later
 
         if(!load_client_public_key(request.body.client_id_num)) {
@@ -334,13 +328,6 @@ void VoterIDService::handle_validation_request(const asio::ip::tcp::endpoint& cl
         return;
     }
     logger->info("Approved a voter ID validation request from client #{} at {}, voter's UID is {}", request.body.client_id_num, client_ip, voter_unique_id);
-    if (voter_unique_id != INVALID_VOTER_ID) {
-        bool name_valid = validate_voter_name(request.body.voter_name, voter_unique_id);
-        if (!name_valid) {
-            logger->warn("Rejected a voter ID validation request because the name did not match the ID.");
-            return;
-        }
-    }
 
 
     // Sign the validation request and the unique voter ID

@@ -117,7 +117,6 @@ struct TicketResponse {
         std::uint32_t voter_unique_id;
         std::uint32_t pin;
         std::string secret;
-        std::uint32_t pin;
 
         Body(bool approved,
              const std::string& last_name,
