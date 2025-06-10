@@ -1,6 +1,9 @@
 services:
   checkin:
     build: .
+    tty: true
+    stdin_open: true
+    working_dir: /epollbook/build/apps/docker-test-deployment/checkin_server
     develop:
       watch:
         - path: .
@@ -11,6 +14,9 @@ services:
         ipv4_address: 172.16.0.5
   dummy-id:
     build: .
+    tty: true
+    stdin_open: true
+    working_dir: /epollbook/build/apps/docker-test-deployment/id_server
     develop:
       watch:
         - path: .
@@ -21,44 +27,52 @@ services:
         ipv4_address: 172.16.0.6
   untrusted-client-0:
     build: .
+    tty: true
+    stdin_open: true
+    working_dir: /epollbook/build/apps/docker-test-deployment/client0
     develop:
       watch:
         - path: .
           target: /epollbook
           action: sync
     networks:
-      pollbook:
-        ipv4_address: 172.16.0.10
+      - pollbook
   trusted-client-1:
     build: .
+    tty: true
+    stdin_open: true
+    working_dir: /epollbook/build/apps/docker-test-deployment/client1
     develop:
       watch:
         - path: .
           target: /epollbook
           action: sync
     networks:
-      pollbook:
-        ipv4_address: 172.16.0.11
+      - pollbook
   untrusted-client-2:
     build: .
+    tty: true
+    stdin_open: true
+    working_dir: /epollbook/build/apps/docker-test-deployment/client2
     develop:
       watch:
         - path: .
           target: /epollbook
           action: sync
     networks:
-      pollbook:
-        ipv4_address: 172.16.0.12
+      - pollbook
   trusted-client-3:
     build: .
+    tty: true
+    stdin_open: true
+    working_dir: /epollbook/build/apps/docker-test-deployment/client3
     develop:
       watch:
         - path: .
           target: /epollbook
           action: sync
     networks:
-      pollbook:
-        ipv4_address: 172.16.0.13
+      - pollbook
 
 networks:
   pollbook:
