@@ -23,6 +23,12 @@ target_compile_features(id_server PUBLIC cxx_std_17)
 
 add_custom_command(TARGET server POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/local-test-deployment ${CMAKE_CURRENT_BINARY_DIR}/local-test-deployment
-    DEPENDS client id_server
+    DEPENDS client secure_client id_server
     COMMENT "Copy local-test-deployment config files"
+    VERBATIM)
+
+add_custom_command(TARGET server POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/docker-test-deployment ${CMAKE_CURRENT_BINARY_DIR}/docker-test-deployment
+    DEPENDS client secure_client id_server
+    COMMENT "Copy docker-test-deployment config files"
     VERBATIM)
