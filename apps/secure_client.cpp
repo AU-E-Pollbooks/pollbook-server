@@ -21,7 +21,7 @@ int main(int argc, char** argv) {
     } else {
         log_level = spdlog::level::debug;
     }
-    epollbook::LogUtils::create_default_logger("client_log", log_level);
+    epollbook::LogUtils::create_default_logger("client_log", log_level, false);
 
     epollbook::PollbookClient client;
     // connect to just the id server instead of both

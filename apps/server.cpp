@@ -21,7 +21,7 @@ int main(int argc, char** argv) {
     } else {
         log_level = spdlog::level::debug;
     }
-    epollbook::LogUtils::create_default_logger("server_log", log_level);
+    epollbook::LogUtils::create_default_logger("server_log", log_level, true);
     // Create a service object
 
     bool running = true;
@@ -56,6 +56,23 @@ int main(int argc, char** argv) {
                 std::cout << "Client " << id << ": "
                          << record.faultDescriptions.size() << " faults\n";
             }
+        } else if (command == "test") {
+            epollbook::LogUtils::create_default_logger("test_logger", log_level, true);
+            spdlog::get("test_logger")->info("This is an info message");
+            spdlog::get("test_logger")->warn("Warning: something weird happened");
+            spdlog::get("test_logger")->warn("Another warning message");
+            spdlog::get("test_logger")->error("An error occurred");
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            auto warnings = epollbook::LogUtils::get_warning_cache_snapshot();
+            nlohmann::json j;
+            j["warnings"] = warnings;
+            std::cout << j.dump(4) << std::endl;
+
+
+            // Clear cache and verify it's empty
+            epollbook::LogUtils::clear_warning_cache();
+            auto warnings_after_clear = epollbook::LogUtils::get_warning_cache_snapshot();
+            std::cout << "Warnings after clear: " << warnings_after_clear.size() << " entries\n";
         } else if (command.substr(0, 4) == "show") {
             try {
                 uint32_t client_id = std::stoul(command.substr(5));
