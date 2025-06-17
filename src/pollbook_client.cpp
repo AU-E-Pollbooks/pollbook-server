@@ -334,9 +334,7 @@ std::future<CheckinResult> PollbookClient::check_in_voter(const std::string& fir
     return current_request_promise.get_future();
 }
 
-std::future<CheckinResult> PollbookClient::verify_ticket(const std::string& first_name, const std::string& middle_name,
-                                                         const std::string& last_name, const uint32_t voter_id,
-                                                         const std::string& ticket) {
+std::future<CheckinResult> PollbookClient::verify_ticket(const std::string& ticket, const std::uint32_t pin) {
     if(!checkin_connected) {
         throw std::runtime_error("Client must be connected before calling check_in_voter!");
     }
@@ -348,7 +346,7 @@ std::future<CheckinResult> PollbookClient::verify_ticket(const std::string& firs
                                           current_time.time_since_epoch())
                                           .count();
     std::uint32_t client_id = Config::getUInt32(Config::SECTION_BASIC, Config::CLIENT_ID);
-    TicketRequest::Body response_body(client_id, voter_id, current_timestamp, ticket);
+    TicketRequest::Body response_body(client_id, current_timestamp, ticket, pin);
     nlohmann::json body_json = TicketRequest::Body::ToJson(response_body);
     std::string body_string = body_json.dump();
     private_key_signer.init();

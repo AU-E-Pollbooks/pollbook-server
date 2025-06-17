@@ -33,6 +33,7 @@ CheckinService::CheckinService()
     /*     network_io_context.run(); */
     /* }); */
     trusted_clients = load_trusted_clients("trusted_clients.txt");
+    load_pin_mappings(Config::getString(Config::SECTION_BASIC, Config::VOTER_LIST_FILE));
     load_client_public_keys();
     configure_ssl_context(ssl_context,
                           Config::getString(Config::SECTION_SECURITY, Config::CHECKIN_SERVICE_CERT),
@@ -245,9 +246,27 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
     TicketRequest request = std::move(*req);
     uint32_t client_id = client_id_map[client_ip];
     if (request.body.client_id != client_id) {
-        logger->warn("Ct ID in the message and the client ID in the public do not match!");
+        logger->warn("Client ID in the message and the client ID in the records do not match!");
     }
-    std::map<std::string, std::string> voter_info;
+
+    std::stringstream ss;
+    std::string pin_str;
+    ss << request.body.pin;
+    ss >> pin_str;
+    std::uint64_t voter_id;
+    auto it = pin_to_voter_id.find(pin_str);
+    if (it != pin_to_voter_id.end()) {
+        voter_id = std::stoull(it->second);
+    }
+    std::map<std::string, std::string> voter_info = find_voter(
+        Config::getString(
+            Config::SECTION_BASIC, Config::VOTER_LIST_FILE
+        ),
+        voter_id
+    );
+    if (std::to_string(request.body.pin) != voter_info["pin"]) {
+        logger->warn("Wrong Pin!");
+    }
     if(client_verifiers.find(request.body.client_id) == client_verifiers.end()) {
         if(!load_client_public_key(request.body.client_id)) {
             logger->warn("Could not load the public key for client number {}. Ignoring a voter ID validation request.", request.body.client_id);
@@ -264,7 +283,7 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
     std::shared_ptr<Timer> timer;
     {
         std::lock_guard<std::mutex> lock(mtx);
-        auto it = request_timers.find(request.body.voter_unique_id);
+        auto it = request_timers.find(voter_id);
         if (it != request_timers.end()) {
             timer = it->second;
             request_timers.erase(it);
@@ -281,15 +300,14 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
         std::pair pair = client_tickets_map[request.body.ticket];
         id = pair.first;
         secret = pair.second;
-        voter_info = find_voter(Config::getString(Config::SECTION_BASIC, Config::VOTER_LIST_FILE),
-                                request.body.voter_unique_id);
         TicketResponse::Body response_body(
             true,
             voter_info["last_name"],
             voter_info["first_name"],
             voter_info["middle_name"],
-            request.body.voter_unique_id,
-            secret
+            voter_id,
+            secret,
+            request.body.pin
         );
     
 
@@ -313,14 +331,15 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
     else {
         std::map<std::string,std::string> voter_info;
         voter_info = find_voter(Config::getString(Config::SECTION_BASIC, Config::VOTER_LIST_FILE),
-                                request.body.voter_unique_id);
+                                voter_id);
         TicketResponse::Body response_body(
             false,
             voter_info["last_name"],
             voter_info["first_name"],
             voter_info["middle_name"],
-            request.body.voter_unique_id,
-            ""
+            voter_id,
+            "",
+            request.body.pin
         );
         nlohmann::json body_json = TicketResponse::Body::ToJson(response_body);
         std::string body_string = body_json.dump();
@@ -637,9 +656,10 @@ std::map<std::string, std::string> CheckinService::find_voter(const std::string&
     std::string line;
     while (std::getline(file, line)) {
         std::istringstream iss(line);
-        std::string uid, last_name, first_name, middle_name, addr, city, state, zip;
+        std::string uid, last_name, first_name, middle_name, addr, city, state, zip, pin_str;
 
         if (std::getline(iss, uid, ',') &&
+            std::getline(iss, pin_str, ',') &&
             std::getline(iss, last_name, ',') &&
             std::getline(iss, first_name, ',') &&
             std::getline(iss, middle_name, ',') &&
@@ -652,6 +672,7 @@ std::map<std::string, std::string> CheckinService::find_voter(const std::string&
                 voter_info["last_name"] = last_name;
                 voter_info["first_name"] = first_name;
                 voter_info["middle_name"] = middle_name;
+                voter_info["pin"] = pin_str;
                 break;
             }
         } else {
@@ -707,6 +728,44 @@ bool CheckinService::load_client_public_keys() {
 void CheckinService::add_client(uint32_t client_id, ClientType type) {
     std::unique_lock<std::shared_mutex> lock(client_mutex);
     clients[client_id] = ClientInfo(client_id, type);
+}
+
+void CheckinService::load_pin_mappings(const std::string& csv_file_path) {
+    std::ifstream file(csv_file_path);
+    
+    if (!file.is_open()) {
+        std::cerr << "Error opening the file\n";
+    }
+
+    std::string line;
+    // Skip header line if present
+    std::getline(file, line);
+    
+    while (std::getline(file, line)) {
+        std::istringstream iss(line);
+        std::string uid, pin, last_name, first_name, middle_name, addr, city, state, zip;
+        
+        if (std::getline(iss, uid, ',') &&
+            std::getline(iss, pin, ',') &&
+            std::getline(iss, last_name, ',') &&
+            std::getline(iss, first_name, ',') &&
+            std::getline(iss, middle_name, ',') &&
+            std::getline(iss, addr, ',') &&
+            std::getline(iss, city, ',') &&
+            std::getline(iss, state, ',') &&
+            std::getline(iss, zip)) {
+            
+            // Remove any whitespace from the PIN
+            // pin.erase(std::remove_if(pin.begin(), pin.end(), ::isspace), pin.end());
+            
+            // Store the PIN -> voter ID mapping
+            pin_to_voter_id[pin] = uid;
+        } else {
+            std::cerr << "Invalid line format: " << line << std::endl;
+        }
+    }
+    
+    file.close();
 }
 
 std::unordered_set<uint32_t> CheckinService::load_trusted_clients(const std::string& filename) {
