@@ -59,6 +59,11 @@ void LogUtils::clear_warning_cache() {
     }
 }
 
+bool LogUtils::remove_warning_at_index(std::size_t index) {
+    initialize();
+    return instance->warning_sink && instance->warning_sink->remove_warning_at(index);
+}
+
 std::vector<std::string> LogUtils::get_warning_cache_snapshot() {
     initialize();
     if(instance->warning_sink) {

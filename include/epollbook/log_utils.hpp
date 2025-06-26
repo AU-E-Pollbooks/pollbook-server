@@ -59,6 +59,7 @@ public:
     static std::string get_default_logger_name();
     static void clear_warning_cache();
     static std::vector<std::string> get_warning_cache_snapshot();
+    static bool remove_warning_at_index(std::size_t index);
 };
 
 }  // namespace epollbook

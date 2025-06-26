@@ -15,6 +15,13 @@ public:
         std::unique_lock<Mutex> lock(mutex_);
         warnings.clear();
     }
+    bool remove_warning_at(std::size_t index) {
+        std::unique_lock<Mutex> lock(mutex_);
+        if (index >= warnings.size()) 
+            return false;
+        warnings.erase(warnings.begin() + index);
+        return true;
+    }
 protected:
     void sink_it_(const spdlog::details::log_msg& msg) override {
         if (msg.level == spdlog::level::warn) {
