@@ -1,0 +1,96 @@
+---
+- name: Render and copy configs for all containers (checkin server, id server, 4 clients)
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    # Checkin server
+    - name: Load checkin server config variables
+      ansible.builtin.include_vars:
+        file: "./host_vars/checkin_server.yml"
+
+    - name: Render config for checkin server
+      ansible.builtin.template:
+        src: "./templates/checkin_server_config.ini.j2"
+        dest: "./output/checkin_server_config.ini"
+        mode: "0644"
+
+    - name: Copy config to checkin server container
+      ansible.builtin.command:
+        cmd: docker cp ./output/checkin_server_config.ini pollbook-server-checkin-1:/epollbook/build/apps/docker-test-deployment/checkin_server/config.ini
+
+    # id server
+    - name: Load id server config variables
+      ansible.builtin.include_vars:
+        file: "./host_vars/id_server.yml"
+
+    - name: Render config for id server
+      ansible.builtin.template:
+        src: "./templates/id_server_config.ini.j2"
+        dest: "./output/id_server_config.ini"
+        mode: "0644"
+
+    - name: Copy config to id server container
+      ansible.builtin.command:
+        cmd: docker cp ./output/id_server_config.ini pollbook-server-dummy-id-1:/epollbook/build/apps/docker-test-deployment/id_server/config.ini
+
+    # client0
+    - name: Load client0 config variables
+      ansible.builtin.include_vars:
+        file: "./host_vars/client0.yml"
+
+    - name: Render config for client0
+      ansible.builtin.template:
+        src: "./templates/client_config.ini.j2"
+        dest: "./output/client0_config.ini"
+        mode: "0644"
+
+    - name: Copy config to client0 container
+      ansible.builtin.command:
+        cmd: docker cp ./output/client0_config.ini pollbook-server-untrusted-client-0-1:/epollbook/build/apps/docker-test-deployment/client0/config.ini
+
+    # client1
+    - name: Load client1 config variables
+      ansible.builtin.include_vars:
+        file: "./host_vars/client1.yml"
+
+    - name: Render config for client1
+      ansible.builtin.template:
+        src: "./templates/client_config.ini.j2"
+        dest: "./output/client1_config.ini"
+        mode: "0644"
+
+    - name: Copy config to client1 container
+      ansible.builtin.command:
+        cmd: docker cp ./output/client1_config.ini pollbook-server-trusted-client-1-1:/epollbook/build/apps/docker-test-deployment/client1/config.ini
+
+    # client2
+    - name: Load client2 config variables
+      ansible.builtin.include_vars:
+        file: "./host_vars/client2.yml"
+
+    - name: Render config for client2
+      ansible.builtin.template:
+        src: "./templates/client_config.ini.j2"
+        dest: "./output/client2_config.ini"
+        mode: "0644"
+
+    - name: Copy config to client2 container
+      ansible.builtin.command:
+        cmd: docker cp ./output/client2_config.ini pollbook-server-untrusted-client-2-1:/epollbook/build/apps/docker-test-deployment/client2/config.ini
+
+    # client3
+    - name: Load client3 config variables
+      ansible.builtin.include_vars:
+        file: "./host_vars/client3.yml"
+
+    - name: Render config for client3
+      ansible.builtin.template:
+        src: "./templates/client_config.ini.j2"
+        dest: "./output/client3_config.ini"
+        mode: "0644"
+
+    - name: Copy config to client3 container
+      ansible.builtin.command:
+        cmd: docker cp ./output/client3_config.ini pollbook-server-trusted-client-3-1:/epollbook/build/apps/docker-test-deployment/client3/config.ini
+

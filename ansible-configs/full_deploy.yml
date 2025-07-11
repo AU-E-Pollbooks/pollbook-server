@@ -1,0 +1,60 @@
+---
+- name: Full E-Pollbook Automated Setup
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    run_map:
+      pollbook-server-checkin-1:
+        workdir: /epollbook/build/apps/docker-test-deployment/checkin_server
+        binary: ../../server
+      pollbook-server-dummy-id-1:
+        workdir: /epollbook/build/apps/docker-test-deployment/id_server
+        binary: ../../id_server
+      pollbook-server-untrusted-client-0-1:
+        workdir: /epollbook/build/apps/docker-test-deployment/client0
+        binary: ../../client
+      pollbook-server-trusted-client-1-1:
+        workdir: /epollbook/build/apps/docker-test-deployment/client1
+        binary: ../../secure_client
+      pollbook-server-untrusted-client-2-1:
+        workdir: /epollbook/build/apps/docker-test-deployment/client2
+        binary: ../../client
+      pollbook-server-trusted-client-3-1:
+        workdir: /epollbook/build/apps/docker-test-deployment/client3
+        binary: ../../secure_client
+
+  tasks:
+    - name: Step 1 – Make generate_keys.sh executable
+      file:
+        path: ../apps/docker-test-deployment/generate_keys.sh
+        mode: '0755'
+
+    - name: Step 2 – Run the key/cert generation script
+      command: ../apps/docker-test-deployment/generate_keys.sh
+
+    - name: Step 3 – Stop and remove any previous Docker containers
+      shell: docker compose down || true
+      args:
+        chdir: "{{ playbook_dir }}/.."
+
+    - name: Step 4 – Build images and start all Docker containers
+      shell: docker compose up --build -d
+      args:
+        chdir: "{{ playbook_dir }}/.."
+
+    - name: Step 5 – Wait for containers to be up (4s delay)
+      pause:
+        seconds: 4
+
+    - name: Step 6 – Run the correct binary in each container
+      shell: |
+        docker exec -d -w {{ item.value.workdir }} {{ item.key }} {{ item.value.binary }}
+      with_dict: "{{ run_map }}"
+      register: run_results
+      ignore_errors: yes
+
+    - name: Step 7 – Print the results for each container
+      debug:
+        var: run_results
+
