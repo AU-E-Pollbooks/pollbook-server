@@ -1,0 +1,19 @@
+[Basic]
+checkin_service_host = {{ checkin_service_host }}
+checkin_service_port = {{ checkin_service_port }}
+voter_list_file = {{ voter_list_file | default('voters.csv') }}
+log_level = {{ log_level }}
+
+[Security]
+private_key = {{ private_key }}
+id_service_public_key = {{ id_service_public_key }}
+checkin_service_public_key = {{ checkin_service_public_key }}
+client_keys_folder = {{ client_keys_folder }}
+client_key_file_prefix = {{ client_key_file_prefix }}
+request_freshness_interval = {{ request_freshness_interval }}
+checkin_service_cert = {{ checkin_service_cert }}
+id_service_cert = {{ id_service_cert }}
+local_cert = {{ local_cert }}
+ca_cert = {{ ca_cert }}
+timeout_interval = {{ timeout_interval }}
+
