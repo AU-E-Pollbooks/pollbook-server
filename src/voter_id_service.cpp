@@ -142,6 +142,7 @@ void VoterIDService::start_size_read(asio::ip::tcp::endpoint client_ip) {
     asio::async_read_until(*(client_ssl_streams.at(client_ip)), *client_buffers[client_ip], "\n",
     [this, client_ip, message_size, msg_size_str](const asio::error_code& error, std::size_t bytes_read) {
         if(!error) {
+            // TODO add error checking here for stoul
             *msg_size_str = std::string(asio::buffer_cast<const char*>(this->client_buffers[client_ip]->data()), bytes_read);
             *message_size = std::stoul(*msg_size_str);
             logger->debug("Client at {}: Message size is {} bytes", client_ip, *message_size);

@@ -6,6 +6,9 @@ FROM ubuntu:24.04 AS base
 # Install necessary tools
 RUN apt-get update && apt-get install -y \
     build-essential \
+    python3 \
+    python3-pip \
+    python-is-python3 \
     cmake \
     git
 
@@ -33,6 +36,9 @@ FROM base AS dev
 COPY --from=json-build /usr/local/ /usr/local/
 
 # Copy the source code to the container
+COPY requirements.txt requirements.txt
+RUN pip3 install --no-cache-dir --break-system-packages -r /epollbook/requirements.txt
+
 COPY CMakeLists.txt ./
 COPY cmake/ cmake/
 COPY src/ src/

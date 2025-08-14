@@ -534,6 +534,16 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
                                      current_time.time_since_epoch())
                                      .count();
     bool accept = false;
+
+    nlohmann::json j = CheckinRequest::Body::ToJson(request.body);
+    std::string cpp_dump = j.dump(); 
+    std::string cpp_base64 = Base64::encode(
+        reinterpret_cast<const uint8_t*>(cpp_dump.data()),
+        cpp_dump.size());
+    std::cout << "C++ signed bytes (base64): " << cpp_base64 << std::endl;
+    nlohmann::json request_json = CheckinRequest::ToJson(request);
+    std::string request_message_string = request_json.dump();
+    // logger->debug("[DEBUG] {}", request.client_signature);
     if(validate_client_request(request, current_timestamp)) {
         auto find_voter_result = voter_status_table.find(request.body.voter_unique_id);
         if(find_voter_result != voter_status_table.end()) {
@@ -582,6 +592,7 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
     std::size_t response_size = response_json.size();
     std::string response_message_string = response_json.dump();
     std::string response_string = std::to_string(response_size) + "\n" + response_message_string +"\n";
+    logger->debug("[DEBUG] {}", response_string);
 
     logger->debug("Sending a response of size {} to client at {}: {}", response_size, client_ip, response_message_string);
     asio::write(*(client_ssl_streams.at(client_ip)), asio::buffer(response_string));
