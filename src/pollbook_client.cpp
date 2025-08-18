@@ -129,8 +129,8 @@ void PollbookClient::start_id_request_write(std::uint64_t timestamp, std::string
                                             const std::vector<std::uint8_t>& voter_id_data) {
     std::uint32_t my_id = Config::getUInt32(Config::SECTION_BASIC, Config::CLIENT_ID);
     VoterIDRequest::Body validation_request_body(
-        my_id, timestamp, first_name, middle_name, 
-        last_name, voter_id_data);
+        my_id, timestamp, last_name, middle_name, 
+        first_name, voter_id_data);
     // Sign the body of the message
     nlohmann::json body_json = VoterIDRequest::Body::ToJson(validation_request_body);
     std::string body_string = body_json.dump();

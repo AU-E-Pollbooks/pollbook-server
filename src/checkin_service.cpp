@@ -662,11 +662,6 @@ void CheckinService::run() {
                  Config::getUInt16(Config::SECTION_BASIC, Config::CHECKIN_SERVICE_PORT));
     WarningQueryServer warning_query_server(network_io_context, 9000);
     warning_query_server.start_accept();
-    std::thread([this] {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-        logger->warn("fake warning: unexpected check-in from ghost client");
-        logger->warn("fake warning 2: the electric bugaloo");
-    }).detach();
 
     network_io_context.run();
 }

@@ -269,7 +269,6 @@ bool VoterIDService::validate_voter_name(const std::string& first_name,
                                          const std::string& last_name,
                                          std::uint32_t voter_unique_id) {
     const auto& data = voter_data[voter_unique_id];
-    logger->debug("first name{} then actual firstname {}", first_name, data[3]);
     return case_insensitive_equal(first_name, data[2]) &&
            case_insensitive_equal(middle_name, data[3]) &&
            case_insensitive_equal(last_name, data[1]);
@@ -291,11 +290,6 @@ void VoterIDService::handle_validation_request(const asio::ip::tcp::endpoint& cl
     std::uint32_t voter_unique_id = validate_and_match_id_data(request.body.voter_id_data);
     if(voter_unique_id == INVALID_VOTER_ID) {
         logger->warn("Rejected a voter ID validation request because the ID data was not valid.");
-        return;
-    }
-    // Enhanced validation using voter_data
-    if (voter_data.find(voter_unique_id) == voter_data.end()) {
-        logger->warn("Rejected a voter ID validation request because the UID {} was not found in the registry.", voter_unique_id);
         return;
     }
 
