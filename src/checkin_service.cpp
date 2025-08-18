@@ -330,7 +330,7 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
             secret,
             request.body.pin
         );
-    
+
 
         // Cancel the timer
         timer->timer.cancel();
@@ -545,6 +545,9 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
                 logger->debug("Rejecting client {}'s check-in request for {} {} {} (UID {}) because the voter has already checked in",
                               request.body.client_id_num, request.body.first_name, request.body.middle_name, request.body.last_name, request.body.voter_unique_id);
             }
+        } else {
+            logger->debug("Rejecting client {}'s check-in request for {} {} {} (UID {}) because the voter is not in the server's voter status table",
+                           request.body.client_id_num, request.body.first_name, request.body.middle_name, request.body.last_name, request.body.voter_unique_id);
         }
     }
 
@@ -579,7 +582,7 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
     std::string response_message_string = response_json.dump();
     std::string response_string = std::to_string(response_size) + "\n" + response_message_string +"\n";
 
-    logger->debug("Sending a response of size {} to client at {}", response_size, client_ip);
+    logger->debug("Sending a response of size {} to client at {}: {}", response_size, client_ip, response_message_string);
     asio::write(*(client_ssl_streams.at(client_ip)), asio::buffer(response_string));
     // Enqueue another read operation for the next message from this client (if any)
     start_size_read(client_ip);
@@ -604,6 +607,7 @@ void CheckinService::start_timer(const std::uint32_t voter_id) {
 }
 
 void CheckinService::handle_verification_timeout(const std::uint32_t voter_id) {
+    logger->debug("Check-in request for voter {} timed out", voter_id);
     std::lock_guard<std::mutex> unlock(mtx);
     request_timers.erase(voter_id);
 }
@@ -646,6 +650,7 @@ bool CheckinService::validate_client_request(const CheckinRequest& request, std:
     }
 
     // At this point the request looks good, now we can actually attempt to check in the voter
+    logger->debug("Client {}'s check-in request passed validation", request.body.client_id_num);
     return true;
 }
 
@@ -770,7 +775,7 @@ void CheckinService::add_client(uint32_t client_id, ClientType type) {
 
 void CheckinService::load_pin_mappings(const std::string& csv_file_path) {
     std::ifstream file(csv_file_path);
-    
+
     if (!file.is_open()) {
         std::cerr << "Error opening the file\n";
     }
@@ -778,11 +783,11 @@ void CheckinService::load_pin_mappings(const std::string& csv_file_path) {
     std::string line;
     // Skip header line if present
     std::getline(file, line);
-    
+
     while (std::getline(file, line)) {
         std::istringstream iss(line);
         std::string uid, pin, last_name, first_name, middle_name, addr, city, state, zip;
-        
+
         if (std::getline(iss, uid, ',') &&
             std::getline(iss, pin, ',') &&
             std::getline(iss, last_name, ',') &&
@@ -792,7 +797,7 @@ void CheckinService::load_pin_mappings(const std::string& csv_file_path) {
             std::getline(iss, city, ',') &&
             std::getline(iss, state, ',') &&
             std::getline(iss, zip)) {
-            
+
             // Remove any whitespace from the PIN
             // pin.erase(std::remove_if(pin.begin(), pin.end(), ::isspace), pin.end());
             // Store the PIN -> voter ID mapping
@@ -801,7 +806,7 @@ void CheckinService::load_pin_mappings(const std::string& csv_file_path) {
             std::cerr << "Invalid line format: " << line << std::endl;
         }
     }
-    
+
     file.close();
 }
 
