@@ -31,6 +31,9 @@ struct VoterIDRequest {
          * clock drift between clients.
          */
         std::uint64_t timestamp;
+        std::string last_name;
+        std::string middle_name;
+        std::string first_name;
         /**
          * A binary data blob representing the voter's physical ID. This could be
          * an image, a barcode, or some other application-defined data format.
@@ -38,9 +41,15 @@ struct VoterIDRequest {
         std::vector<std::uint8_t> voter_id_data;
         Body(std::uint32_t client_id_num,
              std::uint64_t timestamp,
+             std::string last_name,
+             std::string middle_name,
+             std::string first_name,
              const std::vector<std::uint8_t>& voter_id_data)
                 : client_id_num(client_id_num),
                   timestamp(timestamp),
+                  last_name(last_name),
+                  middle_name(middle_name),
+                  first_name(first_name),
                   voter_id_data(voter_id_data) {}
 
         static nlohmann::json ToJson(const VoterIDRequest::Body& body) {
@@ -48,6 +57,9 @@ struct VoterIDRequest {
             std::string voter_id_str = Base64::encode(body.voter_id_data.data(), body.voter_id_data.size());
             json["client_id_num"] = body.client_id_num;
             json["timestamp"] = body.timestamp;
+            json["last_name"] = body.last_name;
+            json["middle_name"] = body.middle_name;
+            json["first_name"] = body.first_name;
             json["voter_id_data"] = voter_id_str;
             return json;
         } 
@@ -78,6 +90,9 @@ struct VoterIDRequest {
         VoterIDRequest::Body request_body(
                 json["body"]["client_id_num"],
                 json["body"]["timestamp"],
+                json["body"]["last_name"],
+                json["body"]["middle_name"],
+                json["body"]["first_name"],
                 voter_id); 
         
 

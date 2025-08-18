@@ -115,8 +115,8 @@ struct TicketResponse {
         * agreed upon by the pollbook system and the voter ID service.
         */
         std::uint32_t voter_unique_id;
-        std::string secret;
         std::uint32_t pin;
+        std::string secret;
 
         Body(bool approved,
              const std::string& last_name,
@@ -141,6 +141,7 @@ struct TicketResponse {
             json["first_name"] = response.first_name;
             json["middle_name"] = response.middle_name;
             json["voter_unique_id"] = response.voter_unique_id;
+            json["pin"] = response.pin;
             json["secret"] = response.secret;
             json["pin"] = response.pin;
 

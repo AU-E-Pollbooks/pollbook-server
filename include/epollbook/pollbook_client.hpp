@@ -145,7 +145,9 @@ public:
      * @param timestamp The "current time" timestamp to use when constructing the message.
      * @param voter_id_data The byte buffer containing the voter ID data to submit.
      */
-    void start_id_request_write(std::uint64_t timestamp, const std::vector<std::uint8_t>& voter_id_data);
+    void start_id_request_write(std::uint64_t timestamp, std::string first_name, 
+                                std::string middle_name, std::string last_name, 
+                                const std::vector<std::uint8_t>& voter_id_data);
 
     /**
      * Asynchronously sends a check-in request to the check-in server for the voter

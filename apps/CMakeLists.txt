@@ -17,6 +17,10 @@ add_executable(secure_client secure_client.cpp)
 target_link_libraries(secure_client epollbook nlohmann_json::nlohmann_json)
 target_compile_features(secure_client PUBLIC cxx_std_17)
 
+add_executable(warning_cache_client warning_cache_client.cpp)
+target_link_libraries(warning_cache_client epollbook nlohmann_json::nlohmann_json)
+target_compile_features(warning_cache_client PUBLIC cxx_std_17)
+
 add_executable(id_server id_server.cpp)
 target_link_libraries(id_server epollbook nlohmann_json::nlohmann_json)
 target_compile_features(id_server PUBLIC cxx_std_17)

@@ -21,7 +21,7 @@ int main(int argc, char** argv) {
     } else {
         log_level = spdlog::level::debug;
     }
-    epollbook::LogUtils::create_default_logger("id_server_log", log_level);
+    epollbook::LogUtils::create_default_logger("id_server_log", log_level, true);
     // Create a service object
     epollbook::VoterIDService service;
     // Start it running

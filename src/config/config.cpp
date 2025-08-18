@@ -22,6 +22,7 @@ const std::string Config::CHECKIN_SERVICE_PUBLIC_KEY = "checkin_service_public_k
 const std::string Config::CLIENT_KEYS_FOLDER = "client_keys_folder";
 const std::string Config::CLIENT_KEY_FILE_PREFIX = "client_key_file_prefix";
 const std::string Config::REQUEST_FRESHNESS_INTERVAL = "request_freshness_interval";
+// const std::string Config::FAULTY_CLEANUP_TIME = "faulty_cleanup_time"; 
 
 const std::string Config::CHECKIN_SERVICE_CERT = "checkin_service_cert";
 const std::string Config::ID_SERVICE_CERT = "id_service_cert";

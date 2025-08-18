@@ -18,6 +18,8 @@
 #include <memory>
 #include <string>
 
+#include "warning_sink.hpp"
+
 namespace epollbook {
 
 /**
@@ -30,8 +32,11 @@ private:
     static std::unique_ptr<LogUtils> instance;
     /** The name of the default logger that was registered with spdlog */
     std::string default_logger_name;
+    /** The sink for storing warning cache for human reporting **/
+    std::shared_ptr<WarningCacheSink<>> warning_sink;
     void make_default_logger(const std::string& logger_name,
-                             spdlog::level::level_enum log_level = spdlog::level::debug);
+                             spdlog::level::level_enum log_level = spdlog::level::debug,
+                             bool enable_warning_cache = false);
     /** Constructs the single instance if it does not already exist */
     static void initialize();
     /** Private constructor; only one instance should be constructed */
@@ -44,13 +49,17 @@ public:
      * registry.
      */
     static void create_default_logger(const std::string& logger_name,
-                                      spdlog::level::level_enum log_level = spdlog::level::debug);
+                                      spdlog::level::level_enum log_level = spdlog::level::debug,
+                                      bool enable_warning_cache = false);
     /**
      * Gets the name of the default, global logger for the epollbook
      * library that was created earlier by create_default_logger. Can
      * be used to retrieve a pointer to the logger from spdlog's registry.
      */
     static std::string get_default_logger_name();
+    static void clear_warning_cache();
+    static std::vector<std::string> get_warning_cache_snapshot();
+    static bool remove_warning_at_index(std::size_t index);
 };
 
 }  // namespace epollbook
