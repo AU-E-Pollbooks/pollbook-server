@@ -76,11 +76,11 @@ private:
      * A Verifier object configured with the public key of the ID-verification
      * service.
      */
-    openssl::Verifier id_service_verifier;
+    std::unique_ptr<openssl::Verifier> id_service_verifier;
     /**
      * A Verifier object configured with the public key of the check-in service.
      */
-    openssl::Verifier checkin_service_verifier;
+    std::unique_ptr<openssl::Verifier> checkin_service_verifier;
     /**
      * A Promise object for the currently-pending check-in request, if there is
      * one. This is initialized when check_in_voter() is called, and it can be

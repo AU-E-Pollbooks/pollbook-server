@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cmath>
 #include <iostream>
+#include <filesystem>
 #include <sstream>
 
 namespace epollbook {
@@ -56,7 +57,6 @@ std::uint32_t VoterIDService::get_client_id_from_cert(X509* cert) {
 
 void VoterIDService::handle_accept(const asio::error_code& error, asio::ip::tcp::socket new_socket) {
     if (!error) {
-        /* auto ssl_stream = std::make_shared<asio::ssl::stream<asio::ip::tcp::socket>>(std::move(new_socket), ssl_context); */
         auto client_ip = new_socket.remote_endpoint();
 
         auto ssl_stream_ptr = std::make_shared<asio::ssl::stream<asio::ip::tcp::socket>>(std::move(new_socket), ssl_context);
@@ -64,10 +64,6 @@ void VoterIDService::handle_accept(const asio::error_code& error, asio::ip::tcp:
         ssl_stream_ptr->async_handshake(asio::ssl::stream_base::server,
             [this, ssl_stream_ptr, client_ip](const asio::error_code& handshake_error) {
                 if (!handshake_error) {
-                    // The handshake was successful
-                    // You can now read or write to the socket
-                    /* asio::ip::tcp::endpoint client_ip = new_socket.remote_endpoint(); */
-                    /* auto client_ip = ssl_stream_ptr->lowest_layer().remote_endpoint(); */
                     X509* clientCert = SSL_get0_peer_certificate(ssl_stream_ptr->native_handle());
 
                     if (clientCert != nullptr) {
@@ -75,10 +71,6 @@ void VoterIDService::handle_accept(const asio::error_code& error, asio::ip::tcp:
                         // Extract the public key from the certificate
                         EVP_PKEY* pubkey = X509_get_pubkey(clientCert);
                         if (pubkey != nullptr) {
-                            // // Open a file to write the public key
-                            // save_pub_key(pubkey, client_id);
-                            // // Clean up
-                            // EVP_PKEY_free(pubkey);
                             openssl::EnvelopeKey envelope_key(pubkey);
                             auto [it, inserted] = client_public_keys.try_emplace(client_id, envelope_key);
                             if (!inserted) {
@@ -86,8 +78,6 @@ void VoterIDService::handle_accept(const asio::error_code& error, asio::ip::tcp:
                                 if(!(it->second == envelope_key)) {
                                     logger->warn("Public key mismatch for client ID {}.\nOld key:\n{}, New key:\n{}",
                                                  client_id, it->second.to_pem_public(), envelope_key.to_pem_public());
-                                    // For now, let's update the key:
-                                    // it->second = std::move(envelope_key);
                                 } else {
                                     logger->debug("Public key matches for client ID {}", client_id);
                                     openssl::Verifier client_verifier(envelope_key, signature_digest_algorithm);
@@ -112,8 +102,6 @@ void VoterIDService::handle_accept(const asio::error_code& error, asio::ip::tcp:
                     client_ssl_streams[client_ip] = ssl_stream_ptr;
 
                     logger->debug("Accepted a connection from client at {}", client_ip);
-                    // Put the new socket in the map
-                    /* client_sockets.emplace(client_ip, ssl_stream_ptr); */
                     // Start a read for the message size
                     start_size_read(client_ip);
                 }
@@ -202,6 +190,14 @@ void VoterIDService::save_pub_key(EVP_PKEY* pubkey, std::uint32_t client_id) {
     pub_key_file_path_builder << Config::getString(Config::SECTION_SECURITY, Config::CLIENT_KEYS_FOLDER)
                           << Config::getString(Config::SECTION_SECURITY, Config::CLIENT_KEY_FILE_PREFIX) << client_id << ".pem";
     std::string pkey_file_path = pub_key_file_path_builder.str();
+    // namespace fs = std::filesystem;
+    // fs::path p(pkey_file_path);
+    // std::error_code ec;
+    // fs::create_directories(p.parent_path(), ec);
+    // if (ec) {
+    //     logger->error("mkdirs {}: {}", p.parent_path().string(), ec.message());
+    //     return; 
+    // }
     FILE* pubkey_file = fopen(pkey_file_path.c_str(), "w");
     if (pubkey_file != nullptr) {
         // Write the public key in PEM format
@@ -369,6 +365,13 @@ bool VoterIDService::load_client_public_keys() {
     std::stringstream key_folder_path_builder;
     key_folder_path_builder << Config::getString(Config::SECTION_SECURITY, Config::CLIENT_KEYS_FOLDER) << "/";
     std::string key_folder_path = key_folder_path_builder.str();
+    namespace fs = std::filesystem;
+    fs::path p(key_folder_path);
+    std::error_code ec;
+    fs::create_directories(p.parent_path(), ec);
+    if (ec) {
+        logger->error("mkdirs {}: {}", p.parent_path().string(), ec.message());
+    }
     try{
         for(const auto &entry : std::filesystem::directory_iterator(key_folder_path)) {
             openssl::EnvelopeKey key = openssl::EnvelopeKey::from_pem_public(entry.path());

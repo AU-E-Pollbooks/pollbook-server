@@ -108,6 +108,7 @@ public:
      * needed by the check-in service.
      */
     static const std::string VOTER_LIST_FILE;
+    static const std::string TRUSTED_CLIENTS_FILE;
     /** The logging level to use for the default logger (trace, debug, info, warning, critical, error) */
     static const std::string LOG_LEVEL;
 

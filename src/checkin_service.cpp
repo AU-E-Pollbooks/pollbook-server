@@ -33,7 +33,7 @@ CheckinService::CheckinService()
     setupFaultTracking();
     FaultTracker::getInstance().initializeConfig();
     load_voter_list(Config::getString(Config::SECTION_BASIC, Config::VOTER_LIST_FILE));
-    trusted_clients = load_trusted_clients("trusted_clients.txt");
+    trusted_clients = load_trusted_clients(Config::getString(Config::SECTION_BASIC, Config::TRUSTED_CLIENTS_FILE));
     load_pin_mappings(Config::getString(Config::SECTION_BASIC, Config::VOTER_LIST_FILE));
     load_client_public_keys();
     configure_ssl_context(ssl_context,
@@ -743,6 +743,14 @@ bool CheckinService::load_client_public_keys() {
     std::stringstream key_folder_path_builder;
     key_folder_path_builder << Config::getString(Config::SECTION_SECURITY, Config::CLIENT_KEYS_FOLDER) << "/";
     std::string key_folder_path = key_folder_path_builder.str();
+    namespace fs = std::filesystem;
+    fs::path p(key_folder_path);
+    std::error_code ec;
+    fs::create_directories(p.parent_path(), ec);
+    if (ec) {
+        logger->error("mkdirs {}: {}", p.parent_path().string(), ec.message());
+    }
+
     try{
         for(const auto &entry : std::filesystem::directory_iterator(key_folder_path)) {
             openssl::EnvelopeKey key = openssl::EnvelopeKey::from_pem_public(entry.path());

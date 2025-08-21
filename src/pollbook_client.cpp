@@ -28,12 +28,12 @@ PollbookClient::PollbookClient()
           private_key_signer(openssl::EnvelopeKey::from_pem_private(
                                  Config::getString(Config::SECTION_SECURITY, Config::LOCAL_PRIVATE_KEY)),
                              openssl::DigestAlgorithm::SHA256),
-          id_service_verifier(openssl::EnvelopeKey::from_pem_public(
-                                  Config::getString(Config::SECTION_SECURITY, Config::ID_SERVICE_PUBLIC_KEY)),
-                              openssl::DigestAlgorithm::SHA256),
-          checkin_service_verifier(openssl::EnvelopeKey::from_pem_public(
-                                       Config::getString(Config::SECTION_SECURITY, Config::CHECKIN_SERVICE_PUBLIC_KEY)),
-                                   openssl::DigestAlgorithm::SHA256),
+          // id_service_verifier(openssl::EnvelopeKey::from_pem_public(
+          //                         Config::getString(Config::SECTION_SECURITY, Config::ID_SERVICE_PUBLIC_KEY)),
+          //                     openssl::DigestAlgorithm::SHA256),
+          // checkin_service_verifier(openssl::EnvelopeKey::from_pem_public(
+          //                              Config::getString(Config::SECTION_SECURITY, Config::CHECKIN_SERVICE_PUBLIC_KEY)),
+          //                          openssl::DigestAlgorithm::SHA256),
           network_thread([this]() { network_io_context.run(); }) {
               configure_ssl_context(ssl_context_id, 
                     id_server_socket,
@@ -66,14 +66,8 @@ void PollbookClient::configure_ssl_context(asio::ssl::context& ssl_context,
                            const std::string& cert_file, 
                            const std::string& key_file, 
                            const std::string& ca_file) {
-    /* ssl_context.use_certificate_chain_file(cert_file); */
-    /* ssl_context.use_private_key_file(key_file, asio::ssl::context::pem); */
     ssl_context.set_verify_mode(asio::ssl::verify_peer);
     ssl_context.load_verify_file(ca_file);
-    /* ssl_context.set_verify_callback( */
-    /*     [](bool preverified, asio::ssl::verify_context& ctx) -> bool { */
-    /*         return preverified; */
-    /*     }); */
     SSL *ssl = socket.native_handle();
     if (!SSL_use_certificate_file(ssl, cert_file.c_str(), SSL_FILETYPE_PEM)) {
         // Handle error
@@ -100,25 +94,62 @@ void PollbookClient::connect_id_server(const std::string& hostname, const std::s
 }
 
 void PollbookClient::make_handshake(const std::string& host, const std::string& port, bool is_id_server) {
-    // Resolve the host and service to a list of endpoints
     asio::ip::tcp::resolver resolver(network_io_context);
     auto endpoints = resolver.resolve(host, port);
-    
+
     try {
-        if(is_id_server) {
-            asio::connect(id_server_socket.lowest_layer(), endpoints);
-        
-            // Perform the SSL handshake
-            id_server_socket.handshake(asio::ssl::stream_base::client);
+        asio::ssl::stream<asio::ip::tcp::socket>& socket =
+            is_id_server ? id_server_socket : checkin_server_socket;
+
+        asio::connect(socket.lowest_layer(), endpoints);
+        socket.handshake(asio::ssl::stream_base::client);
+
+        // Extract SSL pointer
+        SSL* ssl_native = socket.native_handle();
+
+        // Get peer certificate
+        X509* cert = SSL_get_peer_certificate(ssl_native);
+        if(cert) {
+            EVP_PKEY* pubkey = X509_get_pubkey(cert);
+            if(pubkey) {
+                // Get target file name from config
+                std::string cert_path = Config::getString(
+                    Config::SECTION_SECURITY,
+                    is_id_server ? Config::ID_SERVICE_PUBLIC_KEY : Config::CHECKIN_SERVICE_PUBLIC_KEY);
+
+                FILE* fp = fopen(cert_path.c_str(), "w");
+                if(fp) {
+                    PEM_write_PUBKEY(fp, pubkey);
+                    fclose(fp);
+                } else {
+                    std::cerr << "Failed to open cert path: " << cert_path << "\n";
+                }
+
+                // Set verifier now that pubkey is saved
+                openssl::EnvelopeKey verifier_key = openssl::EnvelopeKey::from_pem_public(cert_path);
+                if(is_id_server) {
+                    // id_service_verifier= openssl::Verifier(verifier_key, openssl::DigestAlgorithm::SHA256);
+                    // id_service_verifier = openssl::Verifier(std::move(verifier_key), openssl::DigestAlgorithm::SHA256);
+                    id_service_verifier = std::make_unique<openssl::Verifier>(
+                        openssl::EnvelopeKey::from_pem_public(cert_path),
+                        openssl::DigestAlgorithm::SHA256);
+                } else {
+                    // checkin_service_verifier(verifier_key, openssl::DigestAlgorithm::SHA256);
+                    checkin_service_verifier = std::make_unique<openssl::Verifier>(
+                        openssl::EnvelopeKey::from_pem_public(cert_path),
+                        openssl::DigestAlgorithm::SHA256);
+                }
+
+                EVP_PKEY_free(pubkey);
+            } else {
+                std::cerr << "Could not extract public key from certificate.\n";
+            }
+            X509_free(cert);
+        } else {
+            std::cerr << "No certificate received from peer\n";
         }
-        else {
-            // Attempt to connect to an endpoint
-            asio::connect(checkin_server_socket.lowest_layer(), endpoints);
-        
-            // Perform the SSL handshake
-            checkin_server_socket.handshake(asio::ssl::stream_base::client);
-        }
-    }catch(const std::exception& e) {
+
+    } catch(const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
         throw;
     }
@@ -216,10 +247,10 @@ void PollbookClient::handle_id_response(const VerifiedVoterID& response) {
 
     std::string response_str = response_json.dump();
 
-    id_service_verifier.init();
-    id_service_verifier.add_bytes(response_str.data(), response_str.size());
+    id_service_verifier->init();
+    id_service_verifier->add_bytes(response_str.data(), response_str.size());
     /* id_service_verifier.add_bytes(&response.voter_unique_id, sizeof(response.voter_unique_id)); */
-    bool verified = id_service_verifier.finalize(response.id_service_signature);
+    bool verified = id_service_verifier->finalize(response.id_service_signature);
     if(verified) {
         start_checkin_request_write(response);
     } else {
@@ -289,9 +320,9 @@ void PollbookClient::start_checkin_response_read(std::size_t message_size, std::
 void PollbookClient::handle_checkin_response(const CheckinResponse& response) {
     // Serialize the body of the response to verify the signature
     std::string response_body_str = CheckinResponse::Body::ToJson(response.body).dump();
-    checkin_service_verifier.init();
-    checkin_service_verifier.add_bytes(response_body_str.data(), response_body_str.size());
-    bool verified = checkin_service_verifier.finalize(response.checkin_service_signature);
+    checkin_service_verifier->init();
+    checkin_service_verifier->add_bytes(response_body_str.data(), response_body_str.size());
+    bool verified = checkin_service_verifier->finalize(response.checkin_service_signature);
     if(!verified) {
         current_request_promise.set_value({false, "Invalid signature on check-in service's response. OpenSSL error: " +
                                                       openssl::get_error_string(ERR_get_error(), "")});
@@ -394,9 +425,9 @@ void PollbookClient::start_verify_ticket_response_read() {
                     TicketResponse response = TicketResponse::FromJson(response_json);
 
                     std::string response_body_str = TicketResponse::Body::ToJson(response.body).dump();
-                    checkin_service_verifier.init();
-                    checkin_service_verifier.add_bytes(response_body_str.data(), response_body_str.size());
-                    bool verified = checkin_service_verifier.finalize(response.signature);
+                    checkin_service_verifier->init();
+                    checkin_service_verifier->add_bytes(response_body_str.data(), response_body_str.size());
+                    bool verified = checkin_service_verifier->finalize(response.signature);
 
                     bool is_valid = response_json["body"]["approved"];
                     std::string secret = response_json["body"]["secret"];
