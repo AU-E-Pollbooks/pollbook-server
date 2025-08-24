@@ -1,96 +1,97 @@
 ---
-- name: Render and copy configs for all containers (checkin server, id server, 4 clients)
+- name: Render and copy configs for checkin, id-server, and clients
   hosts: localhost
   gather_facts: false
 
+  vars:
+    out_dir: "{{ playbook_dir }}/output/active"
+
+  pre_tasks:
+    - name: Load vars
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/host_vars/all.yml"
+        name: sc
+
+    - name: Ensure output dir exists
+      ansible.builtin.file:
+        path: "{{ out_dir }}"
+        state: directory
+        mode: "0755"
+
   tasks:
-    # Checkin server
-    - name: Load checkin server config variables
-      ansible.builtin.include_vars:
-        file: "./host_vars/checkin_server.yml"
-
-    - name: Render config for checkin server
+    # ----------------- CHECKIN -----------------
+    - name: Render checkin_server config
       ansible.builtin.template:
-        src: "./templates/checkin_server_config.ini.j2"
-        dest: "./output/checkin_server_config.ini"
+        src: "{{ playbook_dir }}/templates/checkin_server_config.ini.j2"
+        dest: "{{ out_dir }}/checkin_server_config.ini"
         mode: "0644"
+      vars:
+        checkin_service_host: "{{ sc.network.checkin_host }}"
+        checkin_service_port: "{{ sc.network.checkin_port }}"
+        voter_list_file: "{{ sc.services.checkin.voter_list_file | default('voters.csv') }}"
+        log_level: "{{ sc.log_level }}"
 
-    - name: Copy config to checkin server container
+        private_key: "{{ sc.paths.checkin.private_key }}"
+        id_service_public_key: "{{ sc.paths.id_server.pubkey }}"
+        checkin_service_public_key: "{{ sc.paths.checkin.pubkey }}"
+        client_keys_folder: "{{ sc.paths.checkin.client_keys_folder }}"
+        client_key_file_prefix: "{{ sc.paths.checkin.client_key_file_prefix }}"
+        request_freshness_interval: "{{ sc.timing.request_freshness_interval }}"
+        checkin_service_cert: "{{ sc.paths.checkin.cert }}"
+        id_service_cert: "{{ sc.paths.id_server.cert }}"
+        local_cert: "{{ sc.paths.checkin.cert }}"
+        ca_cert: "{{ sc.paths.ca_cert }}"
+        timeout_interval: "{{ sc.timing.timeout_interval }}"
+
+    - name: Copy checkin_server config into container
       ansible.builtin.command:
-        cmd: docker cp ./output/checkin_server_config.ini pollbook-server-checkin-1:/epollbook/build/apps/docker-test-deployment/checkin_server/config.ini
+        cmd: >
+          docker cp {{ out_dir }}/checkin_server_config.ini
+          {{ sc.services.checkin.container }}:{{ sc.services.checkin.workdir }}/config.ini
 
-    # id server
-    - name: Load id server config variables
-      ansible.builtin.include_vars:
-        file: "./host_vars/id_server.yml"
-
-    - name: Render config for id server
+    # ----------------- ID SERVER -----------------
+    - name: Render id_server config
       ansible.builtin.template:
-        src: "./templates/id_server_config.ini.j2"
-        dest: "./output/id_server_config.ini"
+        src: "{{ playbook_dir }}/templates/id_server_config.ini.j2"
+        dest: "{{ out_dir }}/id_server_config.ini"
         mode: "0644"
+      vars:
+        id_service_host: "{{ sc.network.id_host }}"
+        id_service_port: "{{ sc.network.id_port }}"
+        log_level: "{{ sc.log_level }}"
 
-    - name: Copy config to id server container
+        private_key: "{{ sc.paths.id_server.private_key }}"
+        id_service_public_key: "{{ sc.paths.id_server.pubkey }}"
+        checkin_service_public_key: "{{ sc.paths.checkin.pubkey }}"
+        request_freshness_interval: "{{ sc.timing.request_freshness_interval }}"
+        checkin_service_cert: "{{ sc.paths.checkin.cert }}"
+        id_service_cert: "{{ sc.paths.id_server.cert }}"
+        local_cert: "{{ sc.paths.id_server.cert }}"
+        ca_cert: "{{ sc.paths.ca_cert }}"
+        timeout_interval: "{{ sc.timing.timeout_interval }}"
+
+    - name: Copy id_server config into container
       ansible.builtin.command:
-        cmd: docker cp ./output/id_server_config.ini pollbook-server-dummy-id-1:/epollbook/build/apps/docker-test-deployment/id_server/config.ini
+        cmd: >
+          docker cp {{ out_dir }}/id_server_config.ini
+          {{ sc.services.id_server.container }}:{{ sc.services.id_server.workdir }}/config.ini
 
-    # client0
-    - name: Load client0 config variables
-      ansible.builtin.include_vars:
-        file: "./host_vars/client0.yml"
-
-    - name: Render config for client0
+    # ----------------- CLIENTS (loop) -----------------
+    - name: Render client config(s)
       ansible.builtin.template:
-        src: "./templates/client_config.ini.j2"
-        dest: "./output/client0_config.ini"
+        src: "{{ playbook_dir }}/templates/client_config.ini.j2"
+        dest: "{{ out_dir }}/{{ item.name }}_config.ini"
         mode: "0644"
+      loop: "{{ sc.clients }}"
+      loop_control: { label: "{{ item.name }}" }
+      vars:
+        client_id: "{{ item.id }}"
+        checkin_service_host: "{{ sc.network.checkin_host }}"
+        checkin_service_port: "{{ sc.network.checkin_port }}"
+        id_service_host: "{{ sc.network.id_host }}"
+        id_service_port: "{{ sc.network.id_port }}"
+        log_level: "{{ sc.log_level }}"
 
-    - name: Copy config to client0 container
-      ansible.builtin.command:
-        cmd: docker cp ./output/client0_config.ini pollbook-server-untrusted-client-0-1:/epollbook/build/apps/docker-test-deployment/client0/config.ini
-
-    # client1
-    - name: Load client1 config variables
-      ansible.builtin.include_vars:
-        file: "./host_vars/client1.yml"
-
-    - name: Render config for client1
-      ansible.builtin.template:
-        src: "./templates/client_config.ini.j2"
-        dest: "./output/client1_config.ini"
-        mode: "0644"
-
-    - name: Copy config to client1 container
-      ansible.builtin.command:
-        cmd: docker cp ./output/client1_config.ini pollbook-server-trusted-client-1-1:/epollbook/build/apps/docker-test-deployment/client1/config.ini
-
-    # client2
-    - name: Load client2 config variables
-      ansible.builtin.include_vars:
-        file: "./host_vars/client2.yml"
-
-    - name: Render config for client2
-      ansible.builtin.template:
-        src: "./templates/client_config.ini.j2"
-        dest: "./output/client2_config.ini"
-        mode: "0644"
-
-    - name: Copy config to client2 container
-      ansible.builtin.command:
-        cmd: docker cp ./output/client2_config.ini pollbook-server-untrusted-client-2-1:/epollbook/build/apps/docker-test-deployment/client2/config.ini
-
-    # client3
-    - name: Load client3 config variables
-      ansible.builtin.include_vars:
-        file: "./host_vars/client3.yml"
-
-    - name: Render config for client3
-      ansible.builtin.template:
-        src: "./templates/client_config.ini.j2"
-        dest: "./output/client3_config.ini"
-        mode: "0644"
-
-    - name: Copy config to client3 container
-      ansible.builtin.command:
-        cmd: docker cp ./output/client3_config.ini pollbook-server-trusted-client-3-1:/epollbook/build/apps/docker-test-deployment/client3/config.ini
+        private_key: "{{ sc.paths.clients.base }}/{{ item.name }}/{{ sc.paths.clients.private_name }}"
+        id_service_public_key: "{{ sc.paths.id_server.pubkey }}"
 

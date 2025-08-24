@@ -1,17 +1,17 @@
 [Basic]
-client_id = {{ client_id }}
-checkin_service_host = {{ checkin_service_host }}
-checkin_service_port = {{ checkin_service_port }}
-id_service_host = {{ id_service_host }}
-id_service_port = {{ id_service_port }}
-log_level = {{ log_level }}
+client_id = {{ item.id }}
+checkin_service_host = {{ sc.network.checkin_host }}
+checkin_service_port = {{ sc.network.checkin_port }}
+id_service_host = {{ sc.network.id_host }}
+id_service_port = {{ sc.network.id_port }}
+log_level = {{ sc.log_level }}
 
 [Security]
-private_key = {{ private_key }}
-id_service_public_key = {{ id_service_public_key }}
-checkin_service_public_key = {{ checkin_service_public_key }}
-checkin_service_cert = {{ checkin_service_cert }}
-id_service_cert = {{ id_service_cert }}
-local_cert = {{ local_cert }}
-ca_cert = {{ ca_cert }}
+private_key = {{ sc.paths.clients.base }}/{{ item.name }}/{{ sc.paths.clients.private_name }}
+id_service_public_key = {{ sc.paths.id_server.pubkey }}
+checkin_service_public_key = {{ sc.paths.checkin.pubkey }}
+checkin_service_cert = {{ sc.paths.checkin.cert }}
+id_service_cert = {{ sc.paths.id_server.cert }}
+local_cert = {{ sc.paths.clients.base }}/{{ item.name }}/{{ sc.paths.clients.cert_name }}
+ca_cert = {{ sc.paths.ca_cert }}
 
