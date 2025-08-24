@@ -1,0 +1,57 @@
+scenario_name: baseline
+log_level: trace
+
+network:
+  checkin_host: 172.16.0.5
+  checkin_port: 6080
+  id_host: 172.16.0.6
+  id_port: 6666
+
+timing:
+  request_freshness_interval: 120
+  timeout_interval: 60
+
+paths:
+  ca_cert:        ca/ca_cert.pem
+  checkin:
+    cert:         checkin_server/checkin_certificate.pem
+    pubkey:       checkin_server/checkin_pubkey.pem
+    private_key:  checkin_server/private_key.pem
+    client_keys_folder: checkin_server/client_public_keys
+    client_key_file_prefix: clientpub
+  id_server:
+    cert:         id_server/id_certificate.pem
+    pubkey:       id_server/id_pubkey.pem
+    private_key:  id_server/private_key.pem
+  clients:
+    base:         .
+    cert_name:    certificate.pem
+    private_name: private_key.pem
+
+services:
+  checkin:
+    container: pollbook-server-checkin-1
+    workdir:   /epollbook/build/apps/docker-test-deployment/checkin_server
+    voter_list_file: voters.csv
+  id_server:
+    container: pollbook-server-dummy-id-1
+    workdir:   /epollbook/build/apps/docker-test-deployment/id_server
+
+clients:
+  - name: client0
+    container: pollbook-server-untrusted-client-0-1
+    workdir:   /epollbook/build/apps/docker-test-deployment/client0
+    id: 0
+  - name: client1
+    container: pollbook-server-trusted-client-1-1
+    workdir:   /epollbook/build/apps/docker-test-deployment/client1
+    id: 1
+  - name: client2
+    container: pollbook-server-untrusted-client-2-1
+    workdir:   /epollbook/build/apps/docker-test-deployment/client2
+    id: 2
+  - name: client3
+    container: pollbook-server-trusted-client-3-1
+    workdir:   /epollbook/build/apps/docker-test-deployment/client3
+    id: 3
+

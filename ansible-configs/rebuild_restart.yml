@@ -1,0 +1,74 @@
+---
+- name: Rebuild C++ binaries and restart all E-Pollbook processes
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    # Container → where to start the binary inside the container
+    run_map:
+      pollbook-server-checkin-1:
+        workdir: /epollbook/build/apps/docker-test-deployment/checkin_server
+        binary: ../../server
+        process_match: '^(.*/)?server$'
+      pollbook-server-dummy-id-1:
+        workdir: /epollbook/build/apps/docker-test-deployment/id_server
+        binary: ../../id_server
+        process_match: '^(.*/)?id_server$'
+      pollbook-server-untrusted-client-0-1:
+        workdir: /epollbook/build/apps/docker-test-deployment/client0
+        binary: ../../client
+        process_match: '^(.*/)?client$'
+      pollbook-server-trusted-client-1-1:
+        workdir: /epollbook/build/apps/docker-test-deployment/client1
+        binary: ../../secure_client
+        process_match: '^(.*/)?secure_client$'
+      pollbook-server-untrusted-client-2-1:
+        workdir: /epollbook/build/apps/docker-test-deployment/client2
+        binary: ../../client
+        process_match: '^(.*/)?client$'
+      pollbook-server-trusted-client-3-1:
+        workdir: /epollbook/build/apps/docker-test-deployment/client3
+        binary: ../../secure_client
+        process_match: '^(.*/)?secure_client$'
+
+  tasks:
+    - name: Build project inside each container
+      ansible.builtin.shell: >
+        docker exec -w /epollbook/build {{ item.key }}
+        cmake --build . --parallel
+      with_dict: "{{ run_map }}"
+      register: build_out
+      changed_when: true
+
+    - name: Stop running process (best-effort)
+      ansible.builtin.shell: >
+        docker exec {{ item.key }} bash -lc
+        "pkill -f '{{ item.value.process_match }}' || true"
+      with_dict: "{{ run_map }}"
+      changed_when: false
+
+    - name: Start binary in each container (detached)
+      ansible.builtin.shell: >
+        docker exec -d -w {{ item.value.workdir }} {{ item.key }}
+        {{ item.value.binary }}
+      with_dict: "{{ run_map }}"
+      register: start_out
+      changed_when: true
+
+    - name: Show PIDs after restart
+      ansible.builtin.shell: >
+        docker exec {{ item.key }} pgrep -fa '{{ item.value.process_match }}'
+      with_dict: "{{ run_map }}"
+      register: pids
+      changed_when: false
+
+    - name: Build logs (compact)
+      ansible.builtin.debug:
+        var: build_out.results | map(attribute='stderr') | list
+      when: build_out is defined
+
+    - name: New PIDs
+      ansible.builtin.debug:
+        var: pids.results | map(attribute='stdout') | list
+      when: pids is defined
+
