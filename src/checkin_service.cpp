@@ -540,19 +540,22 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
     std::string cpp_base64 = Base64::encode(
         reinterpret_cast<const uint8_t*>(cpp_dump.data()),
         cpp_dump.size());
-    std::cout << "C++ signed bytes (base64): " << cpp_base64 << std::endl;
     nlohmann::json request_json = CheckinRequest::ToJson(request);
     std::string request_message_string = request_json.dump();
     // logger->debug("[DEBUG] {}", request.client_signature);
     if(validate_client_request(request, current_timestamp)) {
         auto find_voter_result = voter_status_table.find(request.body.voter_unique_id);
+        std::cout << "Reached\n";
         if(find_voter_result != voter_status_table.end()) {
+            std::cout << "Reached2\n";
             if(find_voter_result->second == VoterStatus::ELIGIBLE) {
+                std::cout << "Voter found\n";
                 find_voter_result->second = VoterStatus::PENDING;
                 logger->debug("Accepted a check-in request for voter {} {} {} (UID {}) from client {}", request.body.first_name, request.body.middle_name, request.body.last_name, request.body.voter_unique_id, request.body.client_id_num);
                 accept = true;
                 start_timer(request.body.voter_unique_id);
             } else {
+                std::cout << "Voter not found\n";
                 logger->debug("Rejecting client {}'s check-in request for {} {} {} (UID {}) because the voter has already checked in",
                               request.body.client_id_num, request.body.first_name, request.body.middle_name, request.body.last_name, request.body.voter_unique_id);
             }

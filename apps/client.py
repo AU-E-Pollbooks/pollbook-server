@@ -108,10 +108,13 @@ class RSAVerifier:
             return False
 
 
-def build_voter_id_request(config):
+def build_voter_id_request(config, first_name, middle_name, last_name):
     body = {
         "client_id_num": int(config["Basic"]["client_id"]),
         "timestamp": int(time.time() * 1000),
+        "last_name": last_name,
+        "middle_name": middle_name,
+        "first_name": first_name,
         "voter_id_data": base64.b64encode(os.urandom(32)).decode()
     }
     private_key_path = config["Security"]["private_key"]
@@ -181,7 +184,10 @@ def main():
     signer = RSASigner(config["Security"]["private_key"])
     voter_socket, checkin_socket = create_tls_sockets(config)
 
-    voter_id_request = build_voter_id_request(config)
+    first_name = input("First Name: ")
+    middle_name = input("Middle Name: ")
+    last_name = input("Last Name: ")
+    voter_id_request = build_voter_id_request(config, first_name, middle_name, last_name)
     send_request(voter_socket, voter_id_request)
 
     response = receive_voter_id(voter_socket)
@@ -199,9 +205,9 @@ def main():
     checkin_body = {
         "client_id_num": int(config["Basic"]["client_id"]),
         "timestamp": timestamp,
-        "first_name": input("First Name: "),
-        "middle_name": input("Middle Name: "),
-        "last_name": input("Last Name: "),
+        "first_name": first_name,
+        "middle_name": middle_name,
+        "last_name": last_name,
         "voter_unique_id": response["voter_unique_id"],
         "verified_id_message": response
     }
