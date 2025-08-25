@@ -14,9 +14,11 @@
 #include <future>
 #include <string>
 #include <tuple>
+#include <filesystem>
 
 namespace epollbook {
 
+namespace fs = std::filesystem;
 struct CheckinResult {
     bool success;
     std::string failure_reason;
@@ -95,6 +97,8 @@ private:
      * so it can be used to construct the check-in request message.
      */
     std::tuple<std::string, std::string, std::string> current_request_voter_name;
+    const std::string id_pubkey = "id_pubkey.pem";
+    const std::string checkin_pubkey = "checkin_pubkey.pem";
     /** The thread that executes asynchronous network operations */
     std::thread network_thread;
 
@@ -137,6 +141,8 @@ public:
     void start_checkin_response_read(std::size_t message_size, std::shared_ptr<asio::streambuf>);
 
     void handle_checkin_response(const CheckinResponse& response);
+    void write_pubkey_pem(EVP_PKEY* pkey, const fs::path& out_path);
+    void ensure_parent_dir(const fs::path& file_path);
 
     /**
      * Asynchronously sends a voter ID verification request to the ID-verification server.

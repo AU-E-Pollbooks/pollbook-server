@@ -28,12 +28,6 @@ PollbookClient::PollbookClient()
           private_key_signer(openssl::EnvelopeKey::from_pem_private(
                                  Config::getString(Config::SECTION_SECURITY, Config::LOCAL_PRIVATE_KEY)),
                              openssl::DigestAlgorithm::SHA256),
-          // id_service_verifier(openssl::EnvelopeKey::from_pem_public(
-          //                         Config::getString(Config::SECTION_SECURITY, Config::ID_SERVICE_PUBLIC_KEY)),
-          //                     openssl::DigestAlgorithm::SHA256),
-          // checkin_service_verifier(openssl::EnvelopeKey::from_pem_public(
-          //                              Config::getString(Config::SECTION_SECURITY, Config::CHECKIN_SERVICE_PUBLIC_KEY)),
-          //                          openssl::DigestAlgorithm::SHA256),
           network_thread([this]() { network_io_context.run(); }) {
               configure_ssl_context(ssl_context_id, 
                     id_server_socket,
@@ -93,68 +87,84 @@ void PollbookClient::connect_id_server(const std::string& hostname, const std::s
     id_connected = true;
 }
 
-void PollbookClient::make_handshake(const std::string& host, const std::string& port, bool is_id_server) {
-    asio::ip::tcp::resolver resolver(network_io_context);
-    auto endpoints = resolver.resolve(host, port);
-
-    try {
-        asio::ssl::stream<asio::ip::tcp::socket>& socket =
-            is_id_server ? id_server_socket : checkin_server_socket;
-
-        asio::connect(socket.lowest_layer(), endpoints);
-        socket.handshake(asio::ssl::stream_base::client);
-
-        // Extract SSL pointer
-        SSL* ssl_native = socket.native_handle();
-
-        // Get peer certificate
-        X509* cert = SSL_get_peer_certificate(ssl_native);
-        if(cert) {
-            EVP_PKEY* pubkey = X509_get_pubkey(cert);
-            if(pubkey) {
-                // Get target file name from config
-                std::string cert_path = Config::getString(
-                    Config::SECTION_SECURITY,
-                    is_id_server ? Config::ID_SERVICE_PUBLIC_KEY : Config::CHECKIN_SERVICE_PUBLIC_KEY);
-
-                FILE* fp = fopen(cert_path.c_str(), "w");
-                if(fp) {
-                    PEM_write_PUBKEY(fp, pubkey);
-                    fclose(fp);
-                } else {
-                    std::cerr << "Failed to open cert path: " << cert_path << "\n";
-                }
-
-                // Set verifier now that pubkey is saved
-                openssl::EnvelopeKey verifier_key = openssl::EnvelopeKey::from_pem_public(cert_path);
-                if(is_id_server) {
-                    // id_service_verifier= openssl::Verifier(verifier_key, openssl::DigestAlgorithm::SHA256);
-                    // id_service_verifier = openssl::Verifier(std::move(verifier_key), openssl::DigestAlgorithm::SHA256);
-                    id_service_verifier = std::make_unique<openssl::Verifier>(
-                        openssl::EnvelopeKey::from_pem_public(cert_path),
-                        openssl::DigestAlgorithm::SHA256);
-                } else {
-                    // checkin_service_verifier(verifier_key, openssl::DigestAlgorithm::SHA256);
-                    checkin_service_verifier = std::make_unique<openssl::Verifier>(
-                        openssl::EnvelopeKey::from_pem_public(cert_path),
-                        openssl::DigestAlgorithm::SHA256);
-                }
-
-                EVP_PKEY_free(pubkey);
-            } else {
-                std::cerr << "Could not extract public key from certificate.\n";
-            }
-            X509_free(cert);
-        } else {
-            std::cerr << "No certificate received from peer\n";
+void PollbookClient::ensure_parent_dir(const fs::path& file_path) {
+    std::error_code ec;
+    auto parent = file_path.parent_path();
+    if (!parent.empty()) {
+        fs::create_directories(parent, ec);
+        if (ec) {
+            throw std::runtime_error("Failed to create directories for " + parent.string() + ": " + ec.message());
         }
-
-    } catch(const std::exception& e) {
-        std::cerr << "Error: " << e.what() << std::endl;
-        throw;
     }
 }
 
+void PollbookClient::write_pubkey_pem(EVP_PKEY* pkey, const fs::path& out_path) {
+    ensure_parent_dir(out_path);
+    if (FILE* fp = std::fopen(out_path.string().c_str(), "wb")) {
+        if (PEM_write_PUBKEY(fp, pkey) != 1) {
+            std::fclose(fp);
+            throw std::runtime_error("PEM_write_PUBKEY failed for " + out_path.string());
+        }
+        std::fclose(fp);
+    } else {
+        std::cout << out_path.string();
+        throw std::runtime_error("Failed to open file for writing: " + out_path.string());
+    }
+}
+
+void PollbookClient::make_handshake(const std::string& host,
+                                    const std::string& port,
+                                    bool is_id_server) {
+    // Resolve + connect
+    asio::ip::tcp::resolver resolver(network_io_context);
+    auto endpoints = resolver.resolve(host, port);
+
+    asio::ssl::stream<asio::ip::tcp::socket>& socket =
+        is_id_server ? id_server_socket : checkin_server_socket;
+
+    asio::connect(socket.lowest_layer(), endpoints);
+    socket.handshake(asio::ssl::stream_base::client);
+
+    // Extract peer certificate
+    SSL* ssl_native = socket.native_handle();
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+    X509* cert = SSL_get1_peer_certificate(ssl_native); // refcount +1 (OpenSSL 1.1+)
+#else
+    X509* cert = SSL_get_peer_certificate(ssl_native);  // returns new ref
+#endif
+    if (!cert) {
+        throw std::runtime_error("No certificate received from peer");
+    }
+
+    EVP_PKEY* pubkey = X509_get_pubkey(cert);
+    if (!pubkey) {
+        X509_free(cert);
+        throw std::runtime_error("Could not extract public key from certificate");
+    }
+
+    fs::path out_path = fs::path("server_keys") /
+        (is_id_server ? id_pubkey : checkin_pubkey);
+
+    // fs::path out_path = fs::path("server_keys") / fname;
+
+    // Write pubkey
+    write_pubkey_pem(pubkey, out_path);
+
+    // Set verifier 
+    const std::string out_path_str = out_path.string();
+    if (is_id_server) {
+        id_service_verifier = std::make_unique<openssl::Verifier>(
+            openssl::EnvelopeKey::from_pem_public(out_path_str),
+            openssl::DigestAlgorithm::SHA256);
+    } else {
+        checkin_service_verifier = std::make_unique<openssl::Verifier>(
+            openssl::EnvelopeKey::from_pem_public(out_path_str),
+            openssl::DigestAlgorithm::SHA256);
+    }
+
+    EVP_PKEY_free(pubkey);
+    X509_free(cert);
+}
 void PollbookClient::start_id_request_write(std::uint64_t timestamp, std::string first_name, 
                                             std::string middle_name, std::string last_name, 
                                             const std::vector<std::uint8_t>& voter_id_data) {
