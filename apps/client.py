@@ -12,7 +12,12 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.backends import default_backend
 from cryptography.exceptions import InvalidSignature
+from cryptography import x509
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
+SERVER_KEYS_DIR = Path("server_keys")
+ID_PUBKEY_FILE = SERVER_KEYS_DIR / "id_pubkey.pem"
+CHECKIN_PUBKEY_FILE = SERVER_KEYS_DIR / "checkin_pubkey.pem"
 
 def load_config(config_relative_path: str) -> configparser.ConfigParser:
     config_path = Path(__file__).parent / config_relative_path
@@ -33,10 +38,58 @@ def load_config(config_relative_path: str) -> configparser.ConfigParser:
     return config
 
 
+def ensure_parent_dir(p: Path):
+    p.parent.mkdir(parents=True, exist_ok=True)
+
+def extract_and_store_peer_pubkey(ssock: ssl.SSLSocket, out_path: Path):
+    # Grab the peer certificate from the established TLS session
+    der_cert = ssock.getpeercert(binary_form=True)
+    if not der_cert:
+        raise RuntimeError("TLS peer did not present a certificate")
+    cert = x509.load_der_x509_certificate(der_cert)
+    pubkey = cert.public_key()
+
+    pem = pubkey.public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+    ensure_parent_dir(out_path)
+
+    # Write atomically where possible
+    tmp = out_path.with_suffix(out_path.suffix + ".tmp")
+    with open(tmp, "wb") as f:
+        f.write(pem)
+    tmp.replace(out_path)
+
 def create_tls_context(certfile: str, keyfile: str, cafile: str) -> ssl.SSLContext:
     context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=cafile)
     context.load_cert_chain(certfile=certfile, keyfile=keyfile)
     return context
+
+
+def create_tls_sockets(cfg):
+    context = create_tls_context(
+        cfg["Security"]["local_cert"],
+        cfg["Security"]["private_key"],
+        cfg["Security"]["ca_cert"],
+    )
+
+    voter_socket = tls_handshake(
+        cfg["Basic"]["id_service_host"],
+        int(cfg["Basic"]["id_service_port"]),
+        context,
+        "VoterServer",
+    )
+    # Save ID service pubkey
+    extract_and_store_peer_pubkey(voter_socket, ID_PUBKEY_FILE)
+
+    checkin_socket = tls_handshake(
+        cfg["Basic"]["checkin_service_host"],
+        int(cfg["Basic"]["checkin_service_port"]),
+        context,
+        "CheckinServer",
+    )
+    # Save Checkin service pubkey
+    extract_and_store_peer_pubkey(checkin_socket, CHECKIN_PUBKEY_FILE)
+
+    return voter_socket, checkin_socket
 
 
 def tls_handshake(host: str, port: int, context: ssl.SSLContext, label: str) -> ssl.SSLSocket:
@@ -46,28 +99,6 @@ def tls_handshake(host: str, port: int, context: ssl.SSLContext, label: str) -> 
     return ssock
 
 
-def create_tls_sockets(config):
-    context = create_tls_context(
-        config["Security"]["local_cert"],
-        config["Security"]["private_key"],
-        config["Security"]["ca_cert"]
-    )
-
-    voter_socket = tls_handshake(
-        config["Basic"]["id_service_host"],
-        int(config["Basic"]["id_service_port"]),
-        context,
-        "VoterServer"
-    )
-
-    checkin_socket = tls_handshake(
-        config["Basic"]["checkin_service_host"],
-        int(config["Basic"]["checkin_service_port"]),
-        context,
-        "CheckinServer"
-    )
-
-    return voter_socket, checkin_socket
 
 
 class RSASigner:
@@ -108,27 +139,36 @@ class RSAVerifier:
             return False
 
 
-def build_voter_id_request(config, first_name, middle_name, last_name):
+def build_voter_id_request(cfg, first_name, middle_name, last_name, voter_id):
+
+    dummy_bytes = bytes([
+        0x1a, 0x1b, 0x1c, 0x1d, 0x2a, 0x2b, 0x2c, 0x2d,
+        0xff, 0xff, 0xff, 0xff, 0x1, 0x1, 0x1, 0x1,
+        0x1a, 0x1b, 0x1c, 0x1d, 0x2a, 0x2b, 0x2c, 0x2d
+    ])
+    voter_id_raw = voter_id.to_bytes(4, "little") + dummy_bytes
     body = {
-        "client_id_num": int(config["Basic"]["client_id"]),
+        "client_id_num": int(cfg["Basic"]["client_id"]),
         "timestamp": int(time.time() * 1000),
         "last_name": last_name,
         "middle_name": middle_name,
         "first_name": first_name,
-        "voter_id_data": base64.b64encode(os.urandom(32)).decode()
+        "voter_id_data": base64.b64encode(voter_id_raw).decode("ascii"),
     }
-    private_key_path = config["Security"]["private_key"]
+    private_key_path = cfg["Security"]["private_key"]
     with open(private_key_path, "rb") as key_file:
         private_key = serialization.load_pem_private_key(
             key_file.read(), password=None, backend=default_backend()
         )
     signature = private_key.sign(
-        json.dumps(body, sort_keys=True, separators=(",", ":")).encode(),
+        json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8"),
         padding.PKCS1v15(),
         hashes.SHA256()
     )
-    return {"body": body, "client_signature": base64.b64encode(signature).decode()}
-
+    return {
+        "body": body,
+        "client_signature": base64.b64encode(signature).decode("ascii"),
+    }
 
 def send_request(sock: ssl.SSLSocket, request: dict):
     msg = json.dumps(request, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
@@ -187,15 +227,17 @@ def main():
     first_name = input("First Name: ")
     middle_name = input("Middle Name: ")
     last_name = input("Last Name: ")
-    voter_id_request = build_voter_id_request(config, first_name, middle_name, last_name)
+    voter_id = int(input("Voter ID: "))
+    voter_id_request = build_voter_id_request(config, first_name, middle_name, last_name, voter_id)
     send_request(voter_socket, voter_id_request)
 
     response = receive_voter_id(voter_socket)
+    # ID service signature verification
     vvid_data = {
         "presented_id": response["presented_id"],
-        "voter_unique_id": response["voter_unique_id"]
+        "voter_unique_id": response["voter_unique_id"],
     }
-    if verify_signature("id_pubkey.pem", vvid_data, response["id_service_signature"]):
+    if verify_signature(str(ID_PUBKEY_FILE), vvid_data, response["id_service_signature"]):
         print("Valid signature from ID server")
     else:
         print("Invalid signature from ID server")
@@ -229,7 +271,8 @@ def main():
     send_request(checkin_socket, checkin_request)
 
     checkin_resp = receive_checkin_response(checkin_socket)
-    if verify_signature(config["Security"]["checkin_service_public_key"], checkin_resp["body"], checkin_resp["checkin_service_signature"]):
+    # Check-in response verification
+    if verify_signature(str(CHECKIN_PUBKEY_FILE), checkin_resp["body"], checkin_resp["checkin_service_signature"]):
         print("Valid checkin response signature")
         print("Ticket:", checkin_resp["body"]["ticket"])
     else:

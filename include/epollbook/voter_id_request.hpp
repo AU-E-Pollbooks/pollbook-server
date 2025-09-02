@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <vector>
+#include <iostream>
 
 namespace epollbook {
 
@@ -95,7 +96,6 @@ struct VoterIDRequest {
                 json["body"]["first_name"],
                 voter_id); 
         
-
         std::vector<std::uint8_t> client_signature = Base64::decode(json["client_signature"]);
 
         VoterIDRequest request(std::move(request_body), client_signature);

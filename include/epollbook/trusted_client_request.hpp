@@ -51,6 +51,7 @@ struct TicketRequest {
         }
     };
 
+
     Body body;
     /**
      * A signature on this message using the client's public key.
