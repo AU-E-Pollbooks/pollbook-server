@@ -1,4 +1,5 @@
 import socket
+import argparse
 import os
 import time
 import json
@@ -220,7 +221,12 @@ def verify_signature(public_key_path, data: dict, sig_b64: str):
 
 
 def main():
-    config = load_config("docker-test-deployment/client0/client_config.ini")
+
+    parser = argparse.ArgumentParser(prog='client')
+    parser.add_argument('cfg_file')
+    args = parser.parse_args()
+
+    config = load_config(args.cfg_file)
     signer = RSASigner(config["Security"]["private_key"])
     voter_socket, checkin_socket = create_tls_sockets(config)
 
