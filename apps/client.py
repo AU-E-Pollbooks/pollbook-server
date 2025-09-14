@@ -20,24 +20,27 @@ SERVER_KEYS_DIR = Path("server_keys")
 ID_PUBKEY_FILE = SERVER_KEYS_DIR / "id_pubkey.pem"
 CHECKIN_PUBKEY_FILE = SERVER_KEYS_DIR / "checkin_pubkey.pem"
 
-def load_config(config_relative_path: str) -> configparser.ConfigParser:
-    config_path = Path(__file__).parent / config_relative_path
-    config_path = config_path.resolve()
 
-    config = configparser.ConfigParser()
-    if not config.read(config_path):
-        raise FileNotFoundError(f"Could not read config at {config_path}")
+def load_config(cfg: str) -> configparser.ConfigParser:
+    p = Path(cfg)
+    candidates = [p if p.is_absolute() else Path.cwd() / p,
+                  Path(__file__).parent / p]
 
-    if "Security" in config:
-        base = config_path.parent
-        for key in ("local_cert", "private_key", "ca_cert"):
-            if key in config["Security"]:
-                path = Path(config["Security"][key])
-                if not path.is_absolute():
-                    config["Security"][key] = str((base / path).resolve())
+    for c in candidates:
+        cp = configparser.ConfigParser()
+        if cp.read(c):
+            # resolve Security paths relative to the config file
+            if "Security" in cp:
+                base = c.parent
+                for key in ("local_cert", "private_key", "ca_cert"):
+                    if key in cp["Security"]:
+                        path = Path(cp["Security"][key])
+                        if not path.is_absolute():
+                            cp["Security"][key] = str((base / path).resolve())
+            return cp
 
-    return config
-
+    tried = " | ".join(str(c.resolve()) for c in candidates)
+    raise FileNotFoundError(f"Could not read config. Tried: {tried}")
 
 def ensure_parent_dir(p: Path):
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -223,7 +226,7 @@ def verify_signature(public_key_path, data: dict, sig_b64: str):
 def main():
 
     parser = argparse.ArgumentParser(prog='client')
-    parser.add_argument('cfg_file')
+    parser.add_argument('cfg_file', type=Path)
     args = parser.parse_args()
 
     config = load_config(args.cfg_file)

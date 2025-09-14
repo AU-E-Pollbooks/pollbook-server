@@ -1,4 +1,5 @@
 import socket, ssl, json, base64, time
+import os
 from pathlib import Path
 from collections import OrderedDict
 from cryptography.hazmat.primitives import hashes, serialization
@@ -14,8 +15,6 @@ CHECKIN_PUBKEY_FILE = SERVER_KEYS_DIR / "checkin_pubkey.pem"
 
 # ----- exact-bytes JSON (match nlohmann insertion order + compact separators) -----
 def dump(obj: OrderedDict) -> bytes:
-    # nlohmann::json.dump() defaults to no extra spaces; separators=(",", ":") matches that.
-    # Do NOT sort keys; preserve insertion order.
     return json.dumps(obj, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
 # ----- RSA helpers -----
@@ -29,10 +28,18 @@ class RSASigner:
 class RSAVerifier:
     def __init__(self, pem_public_key_path: str):
         with open(pem_public_key_path, "rb") as f:
-            self.key = serialization.load_pem_public_key(f.read())
-    def verify_b64(self, msg: bytes, sig_b64: str) -> bool:
+            self.public_key = serialization.load_pem_public_key(f.read())
+        self._buffer = bytearray()
+    def init(self): self._buffer.clear()
+    def add_bytes(self, data: bytes): self._buffer.extend(data)
+    def finalize(self, signature_b64: str) -> bool:
         try:
-            self.key.verify(base64.b64decode(sig_b64), msg, padding.PKCS1v15(), hashes.SHA256())
+            self.public_key.verify(
+                base64.b64decode(signature_b64),
+                self._buffer,
+                padding.PKCS1v15(),
+                hashes.SHA256(),
+            )
             return True
         except InvalidSignature:
             return False
@@ -77,20 +84,36 @@ def send_len_prefixed(sock: ssl.SSLSocket, obj_bytes: bytes):
     sock.sendall(str(len(obj_bytes)).encode() + b"\n" + obj_bytes + b"\n")
 
 def recv_len_prefixed(sock: ssl.SSLSocket) -> dict:
-    n = int(_read_line(sock))
-    body = _recv_exact(sock, n)
-    # optional trailing newline is fine
-    return json.loads(body.decode("utf-8"))
+    # read first line
+    line = _read_line(sock)  # strips trailing '\n'
+    # Try len-prefixed first
+    try:
+        n = int(line)
+    except ValueError:
+        # Not a length → it's a full JSON line
+        return json.loads(line.decode("utf-8"))
+    else:
+        body = _recv_exact(sock, n)
+        # optional trailing newline
+        try:
+            sock.settimeout(0.01)
+            try:
+                if sock.recv(1, socket.MSG_PEEK) == b"\n":
+                    sock.recv(1)
+            except Exception:
+                pass
+        finally:
+            sock.settimeout(None)
+        return json.loads(body.decode("utf-8"))
 
 # ===== BUILD & SEND TICKET REQUEST (matches TicketRequest::ToJson) =====
-def build_ticket_request_body(client_id: int, ticket: str, pin: int) -> OrderedDict:
-    # Order: client_id, timestamp, ticket, pin
-    return OrderedDict([
-        ("client_id", int(client_id)),
-        ("timestamp", int(time.time() * 1000)),
-        ("ticket", ticket),
-        ("pin", int(pin)),
-    ])
+def build_ticket_body(client_id: int, ticket: str, pin: int) -> dict:
+    return {
+        "client_id": int(client_id),
+        "pin": int(pin),
+        "ticket": ticket,
+        "timestamp": int(time.time() * 1000),
+    }
 
 def make_ticket_request(signer: RSASigner, body: OrderedDict) -> bytes:
     body_bytes = dump(body)
@@ -127,21 +150,23 @@ def verify_ticket_flow(
 
     try:
         signer = RSASigner(client_signing_key)
-        body = build_ticket_request_body(client_id, ticket, pin)
-        wire = make_ticket_request(signer, body)
+        body = build_ticket_body(client_id, ticket, pin)
+        sig = signer.sign(dump(body))  # PKCS1v15+SHA256
+
+        request = {"body": body, "signature": base64.b64encode(sig).decode("ascii")}
+        wire = dump(request)
 
         send_len_prefixed(sock, wire)
         resp = recv_len_prefixed(sock)
 
         # Verify service signature
         verifier = RSAVerifier(str(CHECKIN_PUBKEY_FILE))
-        sig_field = resp.get("signature")  # TicketResponse uses "signature"
-        if not sig_field:
-            return {"ok": False, "error": "missing_signature_field", "raw": resp}
-
-        msg_bytes = response_body_bytes_like_cpp(resp["body"])
-        if not verifier.verify_b64(msg_bytes, sig_field):
+        verifier.init()
+        verifier.add_bytes(dump(resp["body"]))
+        approved = verifier.finalize(resp["signature"])
+        if not approved:
             return {"ok": False, "error": "bad_signature_from_checkin_service", "raw": resp}
+
 
         return {
             "ok": bool(resp["body"].get("approved", False)),
@@ -157,11 +182,9 @@ def verify_ticket_flow(
         except: pass
 
 
-
-
 def main():
     cfg = configparser.ConfigParser()
-    cfg.read("docker-test-deployment/client1/client_config.ini")
+    cfg.read("client_config.ini")
 
     ca_cert = cfg["Security"]["ca_cert"]
     client_cert = cfg["Security"]["local_cert"]
