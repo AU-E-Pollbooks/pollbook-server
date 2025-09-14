@@ -1,5 +1,6 @@
 import socket, ssl, json, base64, time
-import os
+import os 
+import argparse
 from pathlib import Path
 from collections import OrderedDict
 from cryptography.hazmat.primitives import hashes, serialization
@@ -16,6 +17,27 @@ CHECKIN_PUBKEY_FILE = SERVER_KEYS_DIR / "checkin_pubkey.pem"
 # ----- exact-bytes JSON (match nlohmann insertion order + compact separators) -----
 def dump(obj: OrderedDict) -> bytes:
     return json.dumps(obj, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+def load_config(cfg: str) -> configparser.ConfigParser:
+    p = Path(cfg)
+    candidates = [p if p.is_absolute() else Path.cwd() / p,
+                  Path(__file__).parent / p]
+
+    for c in candidates:
+        cp = configparser.ConfigParser()
+        if cp.read(c):
+            # resolve Security paths relative to the config file
+            if "Security" in cp:
+                base = c.parent
+                for key in ("local_cert", "private_key", "ca_cert"):
+                    if key in cp["Security"]:
+                        path = Path(cp["Security"][key])
+                        if not path.is_absolute():
+                            cp["Security"][key] = str((base / path).resolve())
+            return cp
+
+    tried = " | ".join(str(c.resolve()) for c in candidates)
+    raise FileNotFoundError(f"Could not read config. Tried: {tried}")
 
 # ----- RSA helpers -----
 class RSASigner:
@@ -45,7 +67,7 @@ class RSAVerifier:
             return False
 
 # ----- TLS + key harvest (reuse your earlier approach) -----
-def tls_connect_and_harvest_pubkey(ca_cert, cert, key, host, port):
+def make_handshake(ca_cert, cert, key, host, port):
     ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=ca_cert)
     ctx.load_cert_chain(certfile=cert, keyfile=key)
     raw = socket.create_connection((host, port), timeout=10)
@@ -80,10 +102,10 @@ def _recv_exact(sock: ssl.SSLSocket, n: int) -> bytes:
         buf.extend(chunk)
     return bytes(buf)
 
-def send_len_prefixed(sock: ssl.SSLSocket, obj_bytes: bytes):
+def send_ticket(sock: ssl.SSLSocket, obj_bytes: bytes):
     sock.sendall(str(len(obj_bytes)).encode() + b"\n" + obj_bytes + b"\n")
 
-def recv_len_prefixed(sock: ssl.SSLSocket) -> dict:
+def recv_response(sock: ssl.SSLSocket) -> dict:
     # read first line
     line = _read_line(sock)  # strips trailing '\n'
     # Try len-prefixed first
@@ -124,20 +146,6 @@ def make_ticket_request(signer: RSASigner, body: OrderedDict) -> bytes:
     ])
     return dump(req)
 
-# ===== VERIFY TICKET RESPONSE (matches TicketResponse::ToJson) =====
-def response_body_bytes_like_cpp(resp_body: dict) -> bytes:
-    # Expected order: approved, last_name, first_name, middle_name, voter_unique_id, pin, secret
-    # (Their C++ ToJson writes "pin" twice; final value is the same. We keep a single "pin".)
-    ordered = OrderedDict([
-        ("approved", bool(resp_body["approved"])),
-        ("last_name", resp_body["last_name"]),
-        ("first_name", resp_body["first_name"]),
-        ("middle_name", resp_body["middle_name"]),
-        ("voter_unique_id", int(resp_body["voter_unique_id"])),
-        ("pin", int(resp_body["pin"])),
-        ("secret", resp_body["secret"]),
-    ])
-    return dump(ordered)
 
 def verify_ticket_flow(
     ca_cert: str, client_cert: str, client_key: str,
@@ -146,7 +154,7 @@ def verify_ticket_flow(
     client_id: int, ticket: str, pin: int
 ):
     # Connect + harvest check-in pubkey
-    sock = tls_connect_and_harvest_pubkey(ca_cert, client_cert, client_key, checkin_host, checkin_port)
+    sock = make_handshake(ca_cert, client_cert, client_key, checkin_host, checkin_port)
 
     try:
         signer = RSASigner(client_signing_key)
@@ -156,8 +164,8 @@ def verify_ticket_flow(
         request = {"body": body, "signature": base64.b64encode(sig).decode("ascii")}
         wire = dump(request)
 
-        send_len_prefixed(sock, wire)
-        resp = recv_len_prefixed(sock)
+        send_ticket(sock, wire)
+        resp = recv_response(sock)
 
         # Verify service signature
         verifier = RSAVerifier(str(CHECKIN_PUBKEY_FILE))
@@ -183,6 +191,11 @@ def verify_ticket_flow(
 
 
 def main():
+    parser = argparse.ArgumentParser(prog='client')
+    parser.add_argument('cfg_file', type=Path)
+    args = parser.parse_args()
+    # cfg = load_config(args.cfg_file)
+
     cfg = configparser.ConfigParser()
     cfg.read("client_config.ini")
 
