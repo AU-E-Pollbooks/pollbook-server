@@ -319,6 +319,12 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
     }
 
     if (client_tickets_map.find(request.body.ticket) != client_tickets_map.end() && timer_valid) {
+        auto find_voter_result = voter_status_table.find(voter_id);
+        if(find_voter_result != voter_status_table.end()) {
+            if(find_voter_result->second == VoterStatus::PENDING) {
+                find_voter_result->second = VoterStatus::CHECKED_IN;
+            }
+        }
         std::pair pair = client_tickets_map[request.body.ticket];
         id = pair.first;
         secret = pair.second;
@@ -542,14 +548,11 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
         cpp_dump.size());
     nlohmann::json request_json = CheckinRequest::ToJson(request);
     std::string request_message_string = request_json.dump();
-    // logger->debug("[DEBUG] {}", request.client_signature);
+
     if(validate_client_request(request, current_timestamp)) {
         auto find_voter_result = voter_status_table.find(request.body.voter_unique_id);
-        std::cout << "Reached\n";
         if(find_voter_result != voter_status_table.end()) {
-            std::cout << "Reached2\n";
             if(find_voter_result->second == VoterStatus::ELIGIBLE) {
-                std::cout << "Voter found\n";
                 find_voter_result->second = VoterStatus::PENDING;
                 logger->debug("Accepted a check-in request for voter {} {} {} (UID {}) from client {}", request.body.first_name, request.body.middle_name, request.body.last_name, request.body.voter_unique_id, request.body.client_id_num);
                 accept = true;

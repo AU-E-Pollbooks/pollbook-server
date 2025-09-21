@@ -30,13 +30,10 @@ services:
     tty: true
     stdin_open: true
     working_dir: /epollbook/build/apps/docker-test-deployment/client0
-    develop:
-      watch:
-        - path: .
-          target: /epollbook
-          action: sync
-    networks:
-      - pollbook
+    networks: [pollbook]
+    environment:
+      TRUSTED_NAME: trusted-client-1
+
   trusted-client-1:
     build: .
     tty: true
@@ -47,20 +44,24 @@ services:
         - path: .
           target: /epollbook
           action: sync
-    networks:
-      - pollbook
+    networks: [pollbook]
+    environment:
+      TRUSTED_NAME: trusted-client-1
+
   untrusted-client-2:
     build: .
     tty: true
     stdin_open: true
     working_dir: /epollbook/build/apps/docker-test-deployment/client2
+    networks: [pollbook]
     develop:
       watch:
         - path: .
           target: /epollbook
           action: sync
-    networks:
-      - pollbook
+    environment:
+      TRUSTED_NAME: trusted-client-3
+
   trusted-client-3:
     build: .
     tty: true
@@ -71,8 +72,7 @@ services:
         - path: .
           target: /epollbook
           action: sync
-    networks:
-      - pollbook
+    networks: [pollbook]
 
 networks:
   pollbook:

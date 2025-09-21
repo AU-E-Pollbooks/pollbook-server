@@ -18,24 +18,24 @@ CHECKIN_PUBKEY_FILE = SERVER_KEYS_DIR / "checkin_pubkey.pem"
 def dump(obj: OrderedDict) -> bytes:
     return json.dumps(obj, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
-def load_config(cfg: str) -> configparser.ConfigParser:
-    p = Path(cfg)
-    candidates = [p if p.is_absolute() else Path.cwd() / p,
-                  Path(__file__).parent / p]
+def load_config(cfg_str: str) -> configparser.ConfigParser:
+    p = Path(cfg_str)
+    candidates = [p if p.is_absolute() else Path.cwd() / p, Path(__file__).parent / p]
 
     for c in candidates:
-        cp = configparser.ConfigParser()
-        if cp.read(c):
-            # resolve Security paths relative to the config file
-            if "Security" in cp:
+        cfg = configparser.ConfigParser(
+            interpolation=configparser.ExtendedInterpolation(),
+            defaults=os.environ,  # <-- pulls from env (e.g., TRUSTED_NAME)
+        )
+        if cfg.read(c):
+            if "Security" in cfg:
                 base = c.parent
                 for key in ("local_cert", "private_key", "ca_cert"):
-                    if key in cp["Security"]:
-                        path = Path(cp["Security"][key])
+                    if key in cfg["Security"]:
+                        path = Path(cfg["Security"][key])
                         if not path.is_absolute():
-                            cp["Security"][key] = str((base / path).resolve())
-            return cp
-
+                            cfg["Security"][key] = str((base / path).resolve())
+            return cfg
     tried = " | ".join(str(c.resolve()) for c in candidates)
     raise FileNotFoundError(f"Could not read config. Tried: {tried}")
 
@@ -141,7 +141,7 @@ def make_ticket_request(signer: RSASigner, body: OrderedDict) -> bytes:
     body_bytes = dump(body)
     sig = signer.sign(body_bytes)
     req = OrderedDict([
-        ("body", body),                      # nested object keeps insertion order
+        ("body", body),                     # object with stable key order
         ("signature", base64.b64encode(sig).decode("ascii")),
     ])
     return dump(req)
@@ -159,13 +159,13 @@ def verify_ticket_flow(
     try:
         signer = RSASigner(client_signing_key)
         body = build_ticket_body(client_id, ticket, pin)
-        sig = signer.sign(dump(body))  # PKCS1v15+SHA256
+        # sig = signer.sign(dump(body))  # PKCS1v15+SHA256
 
-        request = {"body": body, "signature": base64.b64encode(sig).decode("ascii")}
-        wire = dump(request)
+        request = make_ticket_request(signer, body)
 
-        send_ticket(sock, wire)
+        send_ticket(sock, request)
         resp = recv_response(sock)
+        print("response received")
 
         # Verify service signature
         verifier = RSAVerifier(str(CHECKIN_PUBKEY_FILE))
@@ -194,10 +194,10 @@ def main():
     parser = argparse.ArgumentParser(prog='client')
     parser.add_argument('cfg_file', type=Path)
     args = parser.parse_args()
-    # cfg = load_config(args.cfg_file)
 
     cfg = configparser.ConfigParser()
-    cfg.read("client_config.ini")
+    cfg = load_config(args.cfg_file)
+    # cfg.read("client_config.ini")
 
     ca_cert = cfg["Security"]["ca_cert"]
     client_cert = cfg["Security"]["local_cert"]
@@ -208,30 +208,50 @@ def main():
     port = int(cfg["Basic"]["checkin_service_port"])
     client_id = int(cfg["Basic"]["client_id"])
 
-    # ticket + pin
-    ticket = input("Ticket: ").strip()
-    pin = int(input("Enter PIN: ").strip())
 
-    result = verify_ticket_flow(
-        ca_cert=ca_cert,
-        client_cert=client_cert,
-        client_key=client_key,
-        checkin_host=host,
-        checkin_port=port,
-        client_signing_key=signing_key,
-        client_id=client_id,
-        ticket=ticket,
-        pin=pin,
-    )
+    listen_host = cfg["Basic"]["listen_host"]
+    listen_port = int(cfg["Basic"]["listen_port"])
 
-    if result["ok"]:
-        print("Ticket approved")
-        print(f"Voter: {result['first_name']} {result['middle_name']} {result['last_name']}")
-        print("Secret:", result["secret"])
-    else:
-        print("Ticket invalid:", result.get("error"))
-        print("Raw response:", result["raw"])
+    # Simple TCP server that waits for tickets
+    with socket.create_server((listen_host, listen_port), reuse_port=True) as srv:
+        print(f"[trusted] listening on {listen_host}:{listen_port}")
+        while True:
+            conn, addr = srv.accept()
+            with conn:
+                try:
+                    # Receive: {"ticket": "...", "pin": 123, "client_id": <optional>}
+                    msg = recv_response(conn)              # reuses your len-or-line decoder
+                    ticket = msg["ticket"]
+                    pin = 101
+                    cid = client_id
 
+                    # Run your existing verification flow
+                    result = verify_ticket_flow(
+                        ca_cert=ca_cert,
+                        client_cert=client_cert,
+                        client_key=client_key,
+                        checkin_host=host,
+                        checkin_port=port,
+                        client_signing_key=signing_key,
+                        client_id=cid,
+                        ticket=ticket,
+                        pin=pin,
+                    )
+
+                    # Log + send tiny ACK
+                    if result["ok"]:
+                        print(f"[trusted] approved from {addr}: {result['first_name']} {result['middle_name']} {result['last_name']}")
+                    else:
+                        print(f"[trusted] rejected from {addr}: {result.get('error')}")
+
+                    ack = {"received": True, "approved": bool(result["ok"])}
+                    send_ticket(conn, dump(ack))           # reuse your length-prefixed sender
+                except Exception as e:
+                    err = {"received": False, "error": str(e)}
+                    try:
+                        send_ticket(conn, dump(err))
+                    except Exception:
+                        pass
 if __name__ == "__main__":
     main()
 

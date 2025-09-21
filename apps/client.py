@@ -1,4 +1,5 @@
 import socket
+import csv
 import argparse
 import os
 import time
@@ -21,23 +22,28 @@ ID_PUBKEY_FILE = SERVER_KEYS_DIR / "id_pubkey.pem"
 CHECKIN_PUBKEY_FILE = SERVER_KEYS_DIR / "checkin_pubkey.pem"
 
 
-def load_config(cfg: str) -> configparser.ConfigParser:
-    p = Path(cfg)
+
+def load_config(cfg_str: str) -> configparser.ConfigParser:
+    p = Path(cfg_str)
     candidates = [p if p.is_absolute() else Path.cwd() / p,
                   Path(__file__).parent / p]
 
     for c in candidates:
-        cp = configparser.ConfigParser()
-        if cp.read(c):
+        # Seed defaults with environment so ${TRUSTED_NAME} resolves
+        cfg = configparser.ConfigParser(
+            interpolation=configparser.ExtendedInterpolation(),
+            defaults=os.environ
+        )
+        if cfg.read(c):
             # resolve Security paths relative to the config file
-            if "Security" in cp:
+            if "Security" in cfg:
                 base = c.parent
                 for key in ("local_cert", "private_key", "ca_cert"):
-                    if key in cp["Security"]:
-                        path = Path(cp["Security"][key])
+                    if key in cfg["Security"]:
+                        path = Path(cfg["Security"][key])
                         if not path.is_absolute():
-                            cp["Security"][key] = str((base / path).resolve())
-            return cp
+                            cfg["Security"][key] = str((base / path).resolve())
+            return cfg
 
     tried = " | ".join(str(c.resolve()) for c in candidates)
     raise FileNotFoundError(f"Could not read config. Tried: {tried}")
@@ -174,6 +180,63 @@ def build_voter_id_request(cfg, first_name, middle_name, last_name, voter_id):
         "client_signature": base64.b64encode(signature).decode("ascii"),
     }
 
+def send_len_prefixed_bytes(sock: socket.socket, payload: bytes):
+    sock.sendall(str(len(payload)).encode() + b"\n" + payload + b"\n")
+
+
+def get_pin_for_id(csv_path: str, voter_id: int) -> int:
+    """Look up PIN by voter_unique_id in the CSV."""
+    p = Path(csv_path)
+    if not p.is_absolute():
+        p = Path.cwd() / p
+    with p.open(newline="", encoding="utf-8") as f:
+        r = csv.DictReader(f)
+        # Expect headers: id,pin
+        for row in r:
+            if int(row["UID"]) == voter_id:
+                return int(row["PIN"])
+    raise KeyError(f"PIN not found for id {voter_id}")
+
+def send_ticket_to_trusted(cfg, ticket: str, client_id: int, voter_id: int):
+    host = cfg["Basic"]["ticket_sink_host"]
+    port = int(cfg["Basic"]["ticket_sink_port"])
+
+     # Load PIN from CSV (set Basic.pin_csv in your INI)
+    pin_csv = cfg["Basic"].get("pin_csv", "").strip()
+    pin = get_pin_for_id(pin_csv, voter_id) if pin_csv else None
+
+    payload = {
+        "client_id": int(client_id),
+        "pin": int(pin) if pin is not None else None,
+        "ticket": ticket,
+        "timestamp": int(time.time() * 1000),
+    }
+    wire = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    with socket.create_connection((host, port), timeout=5) as s:
+        send_len_prefixed_bytes(s, wire)
+        # optional: read a small ack (len-prefixed JSON)
+        try:
+            s.settimeout(3)
+            # reuse your _read_line / _recv_exact if you want a reply
+            ack_len = b""
+            while not ack_len.endswith(b"\n"):
+                chunk = s.recv(1)
+                if not chunk:
+                    break
+                ack_len += chunk
+            if ack_len:
+                n = int(ack_len.strip())
+                ack = b""
+                while len(ack) < n:
+                    chunk = s.recv(n - len(ack))
+                    if not chunk:
+                        break
+                    ack += chunk
+                # You could log this if you like:
+                # print("Trusted ack:", ack.decode())
+        except Exception:
+            pass
+
 def send_request(sock: ssl.SSLSocket, request: dict):
     msg = json.dumps(request, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     sock.sendall(f"{len(msg)}\n".encode() + msg + b"\n")
@@ -280,10 +343,14 @@ def main():
     send_request(checkin_socket, checkin_request)
 
     checkin_resp = receive_checkin_response(checkin_socket)
-    # Check-in response verification
+    # After verifying check-in response signature:
     if verify_signature(str(CHECKIN_PUBKEY_FILE), checkin_resp["body"], checkin_resp["checkin_service_signature"]):
         print("Valid checkin response signature")
-        print("Ticket:", checkin_resp["body"]["ticket"])
+        ticket = checkin_resp["body"]["ticket"]
+        
+        # send to trusted client
+        send_ticket_to_trusted(config, ticket, int(config["Basic"]["client_id"]), voter_id)
+        print("Ticket Sent")
     else:
         print("Invalid signature in checkin response")
 
