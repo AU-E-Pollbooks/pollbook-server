@@ -222,7 +222,7 @@ def main():
                     # Receive: {"ticket": "...", "pin": 123, "client_id": <optional>}
                     msg = recv_response(conn)              # reuses your len-or-line decoder
                     ticket = msg["ticket"]
-                    pin = 101
+                    pin = msg["pin"]
                     cid = client_id
 
                     # Run your existing verification flow

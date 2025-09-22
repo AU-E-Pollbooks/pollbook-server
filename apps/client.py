@@ -1,12 +1,7 @@
-import socket
-import csv
-import argparse
-import os
-import time
-import json
-import base64
-import ssl
-import configparser
+import socket, csv, argparse, os, time, random
+import json, base64, ssl, configparser, sys
+from pathlib import Path
+from typing import Union
 from pathlib import Path
 from typing import Union
 
@@ -20,7 +15,6 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 SERVER_KEYS_DIR = Path("server_keys")
 ID_PUBKEY_FILE = SERVER_KEYS_DIR / "id_pubkey.pem"
 CHECKIN_PUBKEY_FILE = SERVER_KEYS_DIR / "checkin_pubkey.pem"
-
 
 
 def load_config(cfg_str: str) -> configparser.ConfigParser:
@@ -73,7 +67,6 @@ def create_tls_context(certfile: str, keyfile: str, cafile: str) -> ssl.SSLConte
     context.load_cert_chain(certfile=certfile, keyfile=keyfile)
     return context
 
-
 def create_tls_sockets(cfg):
     context = create_tls_context(
         cfg["Security"]["local_cert"],
@@ -109,8 +102,6 @@ def tls_handshake(host: str, port: int, context: ssl.SSLContext, label: str) -> 
     return ssock
 
 
-
-
 class RSASigner:
     def __init__(self, private_key_path: str):
         with open(private_key_path, "rb") as key_file:
@@ -125,7 +116,6 @@ class RSASigner:
         return self.private_key.sign(
             digest, padding.PKCS1v15(), hashes.SHA256()
         )
-
 
 class RSAVerifier:
     def __init__(self, public_key_path: str):
@@ -232,8 +222,6 @@ def send_ticket_to_trusted(cfg, ticket: str, client_id: int, voter_id: int):
                     if not chunk:
                         break
                     ack += chunk
-                # You could log this if you like:
-                # print("Trusted ack:", ack.decode())
         except Exception:
             pass
 
@@ -286,24 +274,44 @@ def verify_signature(public_key_path, data: dict, sig_b64: str):
     return verifier.finalize(base64.b64decode(sig_b64))
 
 
-def main():
+def load_voters_csv(csv_path: Path):
+    """Return a list of voter dicts from voters.csv."""
+    with open(csv_path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        voters = []
+        for row in reader:
+            voters.append({
+                "id": int(row["UID"]),
+                "first_name": row["First Name"],
+                "middle_name": row["Middle Name"],
+                "last_name": row["Last Name"],
+            })
+        return voters
 
+def main():
     parser = argparse.ArgumentParser(prog='client')
     parser.add_argument('cfg_file', type=Path)
     args = parser.parse_args()
 
-    config = load_config(args.cfg_file)
-    signer = RSASigner(config["Security"]["private_key"])
-    voter_socket, checkin_socket = create_tls_sockets(config)
+    cfg = load_config(args.cfg_file)
+    client_id = int(cfg["Basic"]["client_id"])
+    voters_csv = Path(cfg["Basic"]["voters_csv"])
+    pins_csv   = Path(cfg["Basic"]["pin_csv"])
 
-    first_name = input("First Name: ")
-    middle_name = input("Middle Name: ")
-    last_name = input("Last Name: ")
-    voter_id = int(input("Voter ID: "))
-    voter_id_request = build_voter_id_request(config, first_name, middle_name, last_name, voter_id)
-    send_request(voter_socket, voter_id_request)
+    voter_sock, checkin_sock = create_tls_sockets(cfg)
 
-    response = receive_voter_id(voter_socket)
+    # pick one random voter
+    voters = load_voters_csv(voters_csv)
+    v = random.choice(voters)
+    voter_id = v["id"]
+    fn, mn, ln = v["first_name"], v["middle_name"], v["last_name"]
+
+    t0 = time.time()
+
+    # ---- ID request
+    id_req = build_voter_id_request(cfg, fn, mn, ln, voter_id)
+    send_request(voter_sock, id_req)
+    response = receive_voter_id(voter_sock)
     # ID service signature verification
     vvid_data = {
         "presented_id": response["presented_id"],
@@ -317,16 +325,16 @@ def main():
 
     timestamp = int(time.time() * 1000)
     checkin_body = {
-        "client_id_num": int(config["Basic"]["client_id"]),
+        "client_id_num": int(cfg["Basic"]["client_id"]),
         "timestamp": timestamp,
-        "first_name": first_name,
-        "middle_name": middle_name,
-        "last_name": last_name,
+        "first_name": fn,
+        "middle_name": mn,
+        "last_name": ln,
         "voter_unique_id": response["voter_unique_id"],
         "verified_id_message": response
     }
 
-    private_key_path = config["Security"]["private_key"]
+    private_key_path = cfg["Security"]["private_key"]
     with open(private_key_path, "rb") as key_file:
         private_key = serialization.load_pem_private_key(
             key_file.read(), password=None, backend=default_backend()
@@ -340,20 +348,19 @@ def main():
         "body": checkin_body,
         "client_signature": base64.b64encode(checkin_sig).decode()
     }
-    send_request(checkin_socket, checkin_request)
+    send_request(checkin_sock, checkin_request)
 
-    checkin_resp = receive_checkin_response(checkin_socket)
+    checkin_resp = receive_checkin_response(checkin_sock)
     # After verifying check-in response signature:
     if verify_signature(str(CHECKIN_PUBKEY_FILE), checkin_resp["body"], checkin_resp["checkin_service_signature"]):
         print("Valid checkin response signature")
         ticket = checkin_resp["body"]["ticket"]
-        
+
         # send to trusted client
-        send_ticket_to_trusted(config, ticket, int(config["Basic"]["client_id"]), voter_id)
+        send_ticket_to_trusted(cfg, ticket, int(cfg["Basic"]["client_id"]), voter_id)
         print("Ticket Sent")
     else:
         print("Invalid signature in checkin response")
-
 
 if __name__ == "__main__":
     main()
