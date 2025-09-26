@@ -219,13 +219,30 @@ def main():
             conn, addr = srv.accept()
             with conn:
                 try:
-                    # Receive: {"ticket": "...", "pin": 123, "client_id": <optional>}
-                    msg = recv_response(conn)              # reuses your len-or-line decoder
-                    ticket = msg["ticket"]
-                    pin = msg["pin"]
-                    cid = client_id
+                    msg = recv_response(conn)
 
-                    # Run your existing verification flow
+                    # --- input validation (cheap pre-flight) ---
+                    ticket = msg.get("ticket")
+                    pin = msg.get("pin")
+                    cid = client_id  # or: int(msg.get("client_id", client_id))
+
+                    # reject empty or obviously malformed without calling check-in
+                    if not isinstance(ticket, str) or not ticket:
+                        send_ticket(conn, dump({"received": False, "error": "empty_ticket"}))
+                        continue
+                    # if your tickets are 32 hex chars, uncomment this:
+                    # import re
+                    # if not re.fullmatch(r"[0-9a-f]{32}", ticket):
+                    #     send_ticket(conn, dump({"received": False, "error": "bad_ticket_format"}))
+                    #     continue
+
+                    try:
+                        pin = int(pin)
+                    except Exception:
+                        send_ticket(conn, dump({"received": False, "error": "bad_pin"}))
+                        continue
+
+                    # --- call the check-in service only after validation ---
                     result = verify_ticket_flow(
                         ca_cert=ca_cert,
                         client_cert=client_cert,
@@ -238,18 +255,17 @@ def main():
                         pin=pin,
                     )
 
-                    # Log + send tiny ACK
+                    # --- now you HAVE 'approved'; use it for logging/ack only ---
                     if result["ok"]:
                         print(f"[trusted] approved from {addr}: {result['first_name']} {result['middle_name']} {result['last_name']}")
                     else:
                         print(f"[trusted] rejected from {addr}: {result.get('error')}")
 
-                    ack = {"received": True, "approved": bool(result["ok"])}
-                    send_ticket(conn, dump(ack))           # reuse your length-prefixed sender
+                    send_ticket(conn, dump({"received": True, "approved": bool(result["ok"])}))
+
                 except Exception as e:
-                    err = {"received": False, "error": str(e)}
                     try:
-                        send_ticket(conn, dump(err))
+                        send_ticket(conn, dump({"received": False, "error": str(e)}))
                     except Exception:
                         pass
 if __name__ == "__main__":

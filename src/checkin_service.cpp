@@ -244,19 +244,22 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
     TicketRequest request = std::move(*req);
     uint32_t client_id = client_id_map[client_ip];
     if (request.body.client_id != client_id) {
-        logger->warn("Client ID in the message and the client ID in the public do not match!");
+        logger->warn("Client ID in the message and the client ID in the public key do not match!");
         FaultTracker::getInstance().reportFault(client_id, "Client ID in the message and the client ID in the public do not match!");
     }
+    auto t_it = client_tickets_map.find(request.body.ticket);
+    if (t_it == client_tickets_map.end()) {
+        logger->warn("Client ticket in the message and the client ticket in the server do not match!");
+        FaultTracker::getInstance().reportFault(client_id, "Client ID in the message and the client ID in the public do not match!");
+        return;
+    }
+    const uint32_t voter_id = t_it->second.first;
 
     std::stringstream ss;
     std::string pin_str;
     ss << request.body.pin;
     ss >> pin_str;
-    std::uint64_t voter_id;
-    auto it = pin_to_voter_id.find(pin_str);
-    if (it != pin_to_voter_id.end()) {
-        voter_id = std::stoull(it->second);
-    }
+
     std::map<std::string, std::string> voter_info = find_voter(
         Config::getString(
             Config::SECTION_BASIC, Config::VOTER_LIST_FILE
@@ -280,7 +283,8 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
     openssl::Verifier& verifier = client_verifiers.at(request.body.client_id);
     verifier.init();
     verifier.add_bytes(request_body_str.data(), request_body_str.size());
-    // handle_verification_timeout(request.body.voter_unique_id);
+    
+
     std::shared_ptr<Timer> timer;
     bool timer_valid = false;
     {
@@ -288,15 +292,15 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
         auto it = request_timers.find(voter_id);
         if (it != request_timers.end()) {
             timer = it->second;
-            
+
             // Check if the request is within the valid time range
             auto now = std::chrono::steady_clock::now();
             auto expiry_time = timer->timer.expiry();
-            
+
             // Get the configured timeout interval in minutes
             int time_interval = Config::getInt32(Config::SECTION_SECURITY, Config::TIMEOUT_INTERVAL);
             auto start_time = expiry_time - std::chrono::minutes(time_interval);
-            
+
             // Check if current time is within the valid window
             if (now >= start_time && now <= expiry_time) {
                 timer_valid = true;
