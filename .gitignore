@@ -7,3 +7,7 @@ artifacts/*
 
 # VS Code settings
 .vscode
+
+# random files
+.watcher.lock
+.clang-format
