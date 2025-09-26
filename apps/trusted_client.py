@@ -1,6 +1,5 @@
 import socket, ssl, json, base64, time
-import os 
-import argparse
+import os, sys, argparse, csv
 from pathlib import Path
 from collections import OrderedDict
 from cryptography.hazmat.primitives import hashes, serialization
@@ -13,6 +12,7 @@ import configparser
 
 SERVER_KEYS_DIR = Path("server_keys")
 CHECKIN_PUBKEY_FILE = SERVER_KEYS_DIR / "checkin_pubkey.pem"
+TRUSTED_LAT_FILE = Path("trusted_latencies.csv")
 
 # ----- exact-bytes JSON (match nlohmann insertion order + compact separators) -----
 def dump(obj: OrderedDict) -> bytes:
@@ -83,6 +83,18 @@ def make_handshake(ca_cert, cert, key, host, port):
     CHECKIN_PUBKEY_FILE.with_suffix(".pem.tmp").replace(CHECKIN_PUBKEY_FILE)
     return ssock
 
+def _trusted_csv_append(row, header=("phase","latency_ms","approved","meta_json")):
+    TRUSTED_LAT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    new = not TRUSTED_LAT_FILE.exists()
+    with TRUSTED_LAT_FILE.open("a", newline="") as f:
+        w = csv.writer(f)
+        if new:
+            w.writerow(header)
+        w.writerow(row)
+        f.flush()
+        os.fsync(f.fileno())
+    print(f"[trusted] wrote row to {TRUSTED_LAT_FILE}")
+    sys.stdout.flush()
 # ----- len-prefixed I/O -----
 def _read_line(sock: ssl.SSLSocket) -> bytes:
     buf = bytearray()
@@ -102,10 +114,12 @@ def _recv_exact(sock: ssl.SSLSocket, n: int) -> bytes:
         buf.extend(chunk)
     return bytes(buf)
 
-def send_ticket(sock: ssl.SSLSocket, obj_bytes: bytes):
+# def send_ticket(sock: ssl.SSLSocket, obj_bytes: bytes):
+def send_ticket(sock: socket.socket, obj_bytes: bytes):
     sock.sendall(str(len(obj_bytes)).encode() + b"\n" + obj_bytes + b"\n")
 
-def recv_response(sock: ssl.SSLSocket) -> dict:
+# def recv_response(sock: ssl.SSLSocket) -> dict:
+def recv_response(sock: socket.socket) -> dict:
     # read first line
     line = _read_line(sock)  # strips trailing '\n'
     # Try len-prefixed first
@@ -216,58 +230,65 @@ def main():
     with socket.create_server((listen_host, listen_port), reuse_port=True) as srv:
         print(f"[trusted] listening on {listen_host}:{listen_port}")
         while True:
-            conn, addr = srv.accept()
-            with conn:
-                try:
-                    msg = recv_response(conn)
-
-                    # --- input validation (cheap pre-flight) ---
-                    ticket = msg.get("ticket")
-                    pin = msg.get("pin")
-                    cid = client_id  # or: int(msg.get("client_id", client_id))
-
-                    # reject empty or obviously malformed without calling check-in
-                    if not isinstance(ticket, str) or not ticket:
-                        send_ticket(conn, dump({"received": False, "error": "empty_ticket"}))
-                        continue
-                    # if your tickets are 32 hex chars, uncomment this:
-                    # import re
-                    # if not re.fullmatch(r"[0-9a-f]{32}", ticket):
-                    #     send_ticket(conn, dump({"received": False, "error": "bad_ticket_format"}))
-                    #     continue
-
+            try:
+                conn, addr = srv.accept()
+                with conn:
                     try:
-                        pin = int(pin)
-                    except Exception:
-                        send_ticket(conn, dump({"received": False, "error": "bad_pin"}))
-                        continue
+                        msg = recv_response(conn)
 
-                    # --- call the check-in service only after validation ---
-                    result = verify_ticket_flow(
-                        ca_cert=ca_cert,
-                        client_cert=client_cert,
-                        client_key=client_key,
-                        checkin_host=host,
-                        checkin_port=port,
-                        client_signing_key=signing_key,
-                        client_id=cid,
-                        ticket=ticket,
-                        pin=pin,
-                    )
+                        # --- input validation
+                        ticket = msg.get("ticket")
+                        pin = msg.get("pin")
+                        cid = client_id 
 
-                    # --- now you HAVE 'approved'; use it for logging/ack only ---
-                    if result["ok"]:
-                        print(f"[trusted] approved from {addr}: {result['first_name']} {result['middle_name']} {result['last_name']}")
-                    else:
-                        print(f"[trusted] rejected from {addr}: {result.get('error')}")
+                        if not isinstance(ticket, str) or not ticket:
+                            send_ticket(conn, dump({"received": False, "error": "empty_ticket"}))
+                            continue
 
-                    send_ticket(conn, dump({"received": True, "approved": bool(result["ok"])}))
+                        try:
+                            pin = int(pin)
+                        except Exception:
+                            send_ticket(conn, dump({"received": False, "error": "bad_pin"}))
+                            continue
 
-                except Exception as e:
-                    try:
-                        send_ticket(conn, dump({"received": False, "error": str(e)}))
-                    except Exception:
-                        pass
+                        # --- call the check-in service only after validation ---
+                        t0 = time.perf_counter()
+                        result = verify_ticket_flow(
+                            ca_cert=ca_cert,
+                            client_cert=client_cert,
+                            client_key=client_key,
+                            checkin_host=host,
+                            checkin_port=port,
+                            client_signing_key=signing_key,
+                            client_id=cid,
+                            ticket=ticket,
+                            pin=pin,
+                        )
+                        elapsed_ms = (time.perf_counter() - t0) * 1000.0
+
+                        print(f"[trusted] latency={elapsed_ms:.3f} ms (about to append)")  # debug
+                        _trusted_csv_append([
+                            "trusted_verify",
+                            f"{elapsed_ms:.3f}",
+                            bool(result.get("ok", False)),
+                            json.dumps({"client_id": cid})
+                        ])
+
+                        if result["ok"]:
+                            print(f"[trusted] approved from {addr}: {result['first_name']} {result['middle_name']} {result['last_name']}")
+                        else:
+                            print(f"[trusted] rejected from {addr}: {result.get('error')}")
+
+                        send_ticket(conn, dump({"received": True, "approved": bool(result["ok"])}))
+
+                    except Exception as e:
+                        try:
+                            send_ticket(conn, dump({"received": False, "error": str(e)}))
+                        except Exception:
+                            pass
+            except KeyboardInterrupt:
+                print("Shutting down cleanly")
+                sys.exit(0)
 if __name__ == "__main__":
     main()
 

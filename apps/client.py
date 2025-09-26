@@ -16,6 +16,7 @@ SERVER_KEYS_DIR = Path("server_keys")
 ID_PUBKEY_FILE = SERVER_KEYS_DIR / "id_pubkey.pem"
 CHECKIN_PUBKEY_FILE = SERVER_KEYS_DIR / "checkin_pubkey.pem"
 
+LAT_FILE = Path("untrusted_latencies.csv")
 
 def load_config(cfg_str: str) -> configparser.ConfigParser:
     p = Path(cfg_str)
@@ -225,6 +226,27 @@ def send_ticket_to_trusted(cfg, ticket: str, client_id: int, voter_id: int):
         except Exception:
             pass
 
+def _csv_append(path: Path, row: list, header: list):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    new = not path.exists()
+    with path.open("a", newline="") as f:
+        w = csv.writer(f)
+        if new:
+            w.writerow(header)
+        w.writerow(row)
+
+def timed_lenpref_request(sock, payload: dict, recv_fn, label: str, extra: dict=None):
+    start = time.perf_counter()
+    send_request(sock, payload)
+    resp = recv_fn(sock)
+    elapsed_ms = (time.perf_counter() - start) * 1000.0
+    _csv_append(
+        LAT_FILE,
+        [label, f"{elapsed_ms:.3f}", bool(resp), json.dumps(extra or {})],
+        header=["phase","latency_ms","ok","meta_json"]
+    )
+    return resp
+
 def send_request(sock: ssl.SSLSocket, request: dict):
     msg = json.dumps(request, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     sock.sendall(f"{len(msg)}\n".encode() + msg + b"\n")
@@ -310,8 +332,10 @@ def main():
 
     # ---- ID request
     id_req = build_voter_id_request(cfg, fn, mn, ln, voter_id)
-    send_request(voter_sock, id_req)
-    response = receive_voter_id(voter_sock)
+    response = timed_lenpref_request(
+        voter_sock, id_req, receive_voter_id, "id_service",
+        extra={"voter_id": voter_id}
+    )
     # ID service signature verification
     vvid_data = {
         "presented_id": response["presented_id"],
@@ -348,9 +372,11 @@ def main():
         "body": checkin_body,
         "client_signature": base64.b64encode(checkin_sig).decode()
     }
-    send_request(checkin_sock, checkin_request)
+    checkin_resp = timed_lenpref_request(
+        checkin_sock, checkin_request, receive_checkin_response, "checkin_service",
+        extra={"voter_id": voter_id}
+    )
 
-    checkin_resp = receive_checkin_response(checkin_sock)
     # After verifying check-in response signature:
     if verify_signature(str(CHECKIN_PUBKEY_FILE), checkin_resp["body"], checkin_resp["checkin_service_signature"]):
         print("Valid checkin response signature")

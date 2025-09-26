@@ -1,5 +1,9 @@
 # Build output directories
 build*
 
+# logs and artifacts
+logs/*
+artifacts/*
+
 # VS Code settings
 .vscode
