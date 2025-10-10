@@ -53,4 +53,3 @@
         {{ '../../secure_client' if 'trusted' in item.container else '../../client' }}
       loop: "{{ sc.clients }}"
       loop_control: { label: "{{ item.name }}" }
-

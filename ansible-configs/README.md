@@ -1,110 +1,203 @@
 # E-Pollbook Ansible Automation
 
-This repository (`pollbook-ansible/`) contains all the necessary scripts, templates, and playbooks to **automate the deployment and configuration of the E-Pollbook system using Docker and Ansible**.
+This repository (`ansible-configs`) contains all the playbooks, templates, and helper tasks to **deploy, iterate on, and reconfigure** the E-Pollbook system with Docker and Ansible.
+It supports one-command deployment, **live rebuild/restart on backend code changes**, and quick switching between test configurations.
 
-Note: The network used in this project is 172.16.0.0, and it is configured accordingly in the Docker Compose file. Ensure you update the configuration as needed for your environment, particularly for IP addresses and network configurations.
+> **Network note:** the Docker network is `172.16.0.0/16` (set in `compose.yaml`).
+> If that conflicts with your environment, update the subnet in the Compose file and the IPs under `host_vars/` accordingly.
 
 ---
 
 ## Directory Structure
 
-e-pollbook-ansible/
+`ansible-configs/`
 
-├── README.md # ← You are here!
+```
+├── README.md                     # ← You are here
+├── host_vars/                    # Per-node configuration (YAML)
+├── output/                       # Rendered config files (generated)
+├── templates/                    # Jinja2 templates for all config INI files
+├── full_deploy.yml               # Build keys, compose up, start all binaries
+├── render_and_copy_config.yml    # Render *.ini and copy into running containers
+├── rebuild_restart.yml           # Rebuild inside containers & restart binaries
+├── restart_binaries.yml          # Restart binaries only (no rebuild)
+└── setup_watcher.yml             # Install/enable background watchers (one time)
+```
 
-├── host_vars/ # Node-specific configuration variables (YAML)
-
-├── output/ # Rendered config files (auto-generated)
-
-├── playbooks/ # Main Ansible playbooks (deploy, render_and_copy_configs, etc.)
-
-├── templates/ # Jinja2 templates for all config files
+> The code-watcher script lives in the repo root at `../tools/epollbook-watch.sh` and is started for you by `setup_watcher.yml`.
 
 ---
 
 ## Prerequisites
 
-- [Docker](https://docs.docker.com/get-docker/)
-- [Docker Compose](https://docs.docker.com/compose/)
-- [Ansible](https://docs.ansible.com/)
-- Python 3.x
+* Docker & Docker Compose v2
+* Python 3.x
+* Ansible (`pip install --user ansible`)
+* `inotify-tools` (for code watching)
+* Your user is in the `docker` group (log out/in after adding)
 
-Install Ansible (if not already):
+Example (Ubuntu):
 
-    pip install ansible
+```bash
+sudo apt update
+sudo apt install -y docker.io docker-compose-plugin python3-pip inotify-tools
+pip install --user ansible
+sudo usermod -aG docker "$USER"
+# log out/in or: newgrp docker
+```
 
+---
 
-# Workflow Overview:
+## Workflow Overview
 
-1. Edit node configurations in host_vars/checkin_server.yml, host_vars/id_server.yml, host_vars/client1.yml, ..., host_vars/client4.yml.
+1. **Deploy containers** with `full_deploy.yml` (build images, start the stack, launch the correct binaries).
+2. **Enable live-reload for backend code** using `setup_watcher.yml`.
+   When you edit C++ in `src/`, `include/`, `apps/` (or `CMakeLists.txt`), your changes are synced into containers and the system is **rebuilt + restarted automatically**.
+3. **Change runtime configs** by editing files under `host_vars/` and running `render_and_copy_config.yml` (then `restart_binaries.yml` if you didn’t rebuild).
 
-2. Render and copy configs: Use Ansible to generate all config files per container (check-in server, ID server, and clients) and copy them into the appropriate Docker containers.
+---
 
-3. Deploy containers: If not already running, use the main deploy playbook to start the containers.
+## How to Use
 
+### 1) Clone the repo
 
-# How to Use:
+```bash
+git clone <your-private-git-url> pollbook-server
+cd pollbook-server/ansible-configs
+```
 
-    1. Clone the Repo
-        
-        git clone <your-private-git-url>
-        
-        cd pollbook/pollbook-ansible
+---
 
-    2. Initial Deployment (First Time Only)
+### 2) Initial Deployment (first time)
 
-        This will build and start all Docker containers, generate initial configs, and set up everything.
+Build and start the full environment (check-in server, ID server, 4 clients) and launch the right binaries in each container:
 
-        Deploy and start everything. Run the full_deploy.yml playbook to deploy the whole project in your system:
-            
-            ansible-playbook full_deploy.yml
+```bash
+ansible-playbook full_deploy.yml
+```
 
+This will:
 
-        This will:
+1. Make the key/cert script executable and run it (creates CA and certs; distributes them).
+2. `docker compose down` (best-effort clean up).
+3. `docker compose up -d` (build & start all containers).
+4. Start the correct **binary** in each container:
 
-            1. Clean up existing containers/networks
+   * check-in server → `server`
+   * ID server → `id_server`
+   * clients → `client`
+   * secure clients → `secure_client`
 
-            2. Build Docker images and start all containers
+---
 
-            3. Perform any initial key/cert generation
+### 3) Enable live code watching (one time)
 
-            4. Wait for containers to be healthy
+Installs two **systemd user services**:
 
-    
-    3. Change Configuration (Anytime Later)
-        
-        Whenever you want to update the configuration file for any node (Check-in Server, ID Server, or Clients):
+* `epollbook-compose-watch` – runs `docker compose watch` so host edits are synced into containers.
+* `epollbook-watcher` – watches **only backend code** (`src/`, `include/`, `apps/`, `CMakeLists.txt`) and runs `rebuild_restart.yml` when changes are detected.
 
-        Edit the corresponding file in host_vars/
-    
-        For example:
+```bash
+ansible-playbook setup_watcher.yml
+systemctl --user status epollbook-compose-watch --no-pager
+systemctl --user status epollbook-watcher --no-pager
+```
 
-            vim host_vars/client1.yml
+Tail watcher logs while you edit code:
 
-        Render and copy updated configs (no need to restart containers):
+```bash
+journalctl --user -u epollbook-watcher -f
+```
 
-            ansible-playbook render_and_copy_configs.yml
+> Debounce is 2s by default. You can change it in `../tools/epollbook-watch.sh` or by exporting `DEBOUNCE=3` and restarting the service.
 
+---
 
-            This will:
+### 4) Change Configuration (any time)
 
-                1. Render all templates for every container using the updated YAML files
+When you need a different test scenario:
 
-                2. Copy the new configs into the correct running containers instantly
+1. Edit the relevant file(s) in `host_vars/`
+   e.g. `host_vars/checkin_server.yml`, `host_vars/id_server.yml`, `host_vars/client0.yml`, …
 
+2. Render and copy configs into the running containers:
 
+```bash
+ansible-playbook render_and_copy_config.yml
+```
 
+3. If you changed only configs (not code), restart the binaries:
 
-# Notes
+```bash
+ansible-playbook restart_binaries.yml
+```
 
-1. All rendered config files are placed in the output/ directory.
+**What happens:**
 
-2. Make sure Docker and Docker Compose are running before running the playbooks.
+* Templates in `templates/*.ini.j2` are rendered into `output/`.
+* The resulting `config.ini` files are copied into each container at:
 
-3. For advanced customization, edit the Jinja2 templates in templates/ and the playbooks in ansible-configs/.
+  ```
+  /epollbook/build/apps/docker-test-deployment/<component>/config.ini
+  ```
+* `restart_binaries.yml` restarts the running processes so changes take effect.
 
-4. The containers' names are defined in the playbook and need to match the ones running in Docker. Always ensure they are correct in the docker ps command output before running playbooks.
+---
 
-5. Use docker-compose down if you need to clean up containers before re-deploying.
+## Notes
 
+* All rendered config files are written to `output/` (generated).
+* The code watcher **only** tracks backend code (`src/`, `include/`, `apps/`, `CMakeLists.txt`). Changes to Ansible or templates do **not** trigger a rebuild (use the playbooks above).
+* If you add/remove containers, update `compose.yaml` and the lists used in:
+
+  * `full_deploy.yml`, `rebuild_restart.yml`, `restart_binaries.yml`
+  * Any relevant template/host var files
+* Use `docker compose down -v` to clean volumes if you want to reset completely.
+
+### Handy commands
+
+```bash
+# Bring everything up from scratch
+ansible-playbook full_deploy.yml
+
+# Manually trigger a rebuild & restart (watcher usually does this for code changes)
+ansible-playbook rebuild_restart.yml
+
+# Push new configs and restart binaries
+ansible-playbook render_and_copy_config.yml
+ansible-playbook restart_binaries.yml
+
+# Watcher & compose-watch logs
+journalctl --user -u epollbook-watcher -f
+journalctl --user -u epollbook-compose-watch -f
+
+# Stop/disable background watchers if needed
+systemctl --user stop epollbook-watcher epollbook-compose-watch
+systemctl --user disable epollbook-watcher epollbook-compose-watch
+```
+
+### Troubleshooting
+
+* **Edits aren’t reflected in containers**
+
+  * Ensure compose watch is running:
+    `systemctl --user status epollbook-compose-watch --no-pager`
+* **Watcher complains about a missing playbook**
+
+  * We standardized on `rebuild_restart.yml`. Confirm it exists and `../tools/epollbook-watch.sh` points to it.
+* **Permission errors with Docker**
+
+  * Add your user to the `docker` group and re-login:
+
+    ```bash
+    sudo usermod -aG docker "$USER"
+    newgrp docker
+    ```
+* **`inotifywait` not found**
+
+  * Install `inotify-tools`.
+
+---
+
+That’s it—clone → **`full_deploy.yml`** → **`setup_watcher.yml`** → edit backend code and see containers rebuild automatically → swap configs with **`render_and_copy_config.yml`**.
 
