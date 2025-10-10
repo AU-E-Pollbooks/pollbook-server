@@ -1,0 +1,70 @@
+services:
+  checkin:
+    {% if checkin.image is defined %}
+    image: {{ checkin.image }}
+    {% else %}
+    build: {{ checkin.build | default('.') }}
+    {% endif %}
+    container_name: {{ checkin.container }}
+    tty: true
+    stdin_open: true
+    working_dir: {{ checkin.workdir }}
+    networks:
+      pollbook:
+        {% if network.checkin_host is defined %}ipv4_address: "{{ network.checkin_host }}"{% endif %}
+    develop:
+      watch:
+        - path: .
+          target: /epollbook
+          action: sync
+
+  dummy-id:
+    {% if id_server.image is defined %}
+    image: {{ id_server.image }}
+    {% else %}
+    build: {{ id_server.build | default('.') }}
+    {% endif %}
+    container_name: {{ id_server.container }}
+    tty: true
+    stdin_open: true
+    working_dir: {{ id_server.workdir }}
+    networks:
+      pollbook:
+        {% if network.id_host is defined %}ipv4_address: "{{ network.id_host }}"{% endif %}
+    develop:
+      watch:
+        - path: .
+          target: /epollbook
+          action: sync
+
+  {% for c in clients_generated %}
+  {{ c.name }}:
+    {% if c.image is defined %}
+    image: {{ c.image }}
+    {% else %}
+    build: {{ c.build | default('.') }}
+    {% endif %}
+    container_name: {{ c.container }}
+    tty: true
+    stdin_open: true
+    working_dir: {{ c.workdir }}
+    networks:
+      pollbook:
+        ipv4_address: "{{ c.ip }}"
+    environment:
+      CLIENT_ID: "{{ c.id }}"
+      TRUSTED: "{{ 1 if c.type == 'trusted' else 0 }}"
+    develop:
+      watch:
+        - path: .
+          target: /epollbook
+          action: sync
+  {% endfor %}
+
+networks:
+  pollbook:
+    ipam:
+      config:
+        - subnet: "{{ network.subnet | default('172.16.0.0/16') }}"
+          {% if network.gateway is defined %}gateway: "{{ network.gateway }}"{% endif %}
+

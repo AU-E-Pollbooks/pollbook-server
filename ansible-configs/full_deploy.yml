@@ -1,60 +1,229 @@
 ---
-- name: Full E-Pollbook Automated Setup
+- name: Full E-Pollbook Automated Setup (dynamic clients)
   hosts: localhost
   gather_facts: false
 
-  vars:
-    run_map:
-      pollbook-server-checkin-1:
-        workdir: /epollbook/build/apps/docker-test-deployment/checkin_server
-        binary: ../../server
-      pollbook-server-dummy-id-1:
-        workdir: /epollbook/build/apps/docker-test-deployment/id_server
-        binary: ../../id_server
-      pollbook-server-untrusted-client-0-1:
-        workdir: /epollbook/build/apps/docker-test-deployment/client0
-        binary: ../../client
-      pollbook-server-trusted-client-1-1:
-        workdir: /epollbook/build/apps/docker-test-deployment/client1
-        binary: ../../secure_client
-      pollbook-server-untrusted-client-2-1:
-        workdir: /epollbook/build/apps/docker-test-deployment/client2
-        binary: ../../client
-      pollbook-server-trusted-client-3-1:
-        workdir: /epollbook/build/apps/docker-test-deployment/client3
-        binary: ../../secure_client
+  vars_prompt:
+    - name: untrusted_count
+      prompt: "How many UNTRUSTED clients?"
+      private: no
+      default: "2"
+    - name: trusted_count
+      prompt: "How many TRUSTED clients?"
+      private: no
+      default: "2"
+    - name: client_ip_base
+      prompt: "Client IP base (first 3 octets)"
+      private: no
+      default: "172.16.0"
+    - name: client_ip_start
+      prompt: "Client IP start (last octet)"
+      private: no
+      default: "100"
+
+  pre_tasks:
+    - name: Load static vars (host_vars/all.yml -> sc)
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/host_vars/all.yml"
+        name: sc
+
+    # Flatten + defaults
+    - name: Prepare network defaults
+      ansible.builtin.set_fact:
+        network: "{{ {
+          'subnet': '172.16.0.0/16',
+          'gateway': '172.16.0.1'
+        } | combine(sc.network | default({})) }}"
+
+    - name: Prepare checkin defaults
+      ansible.builtin.set_fact:
+        checkin: "{{ {
+          'container': 'checkin',
+          'workdir': '/epollbook/build/apps/docker-test-deployment/checkin_server',
+          'build': '.'
+        } | combine(sc.services.checkin | default({})) }}"
+
+    - name: Prepare id_server defaults
+      ansible.builtin.set_fact:
+        id_server: "{{ {
+          'container': 'dummy-id',
+          'workdir': '/epollbook/build/apps/docker-test-deployment/id_server',
+          'build': '.'
+        } | combine(sc.services.id_server | default({})) }}"
+
+    - name: Compute totals
+      ansible.builtin.set_fact:
+        untrusted_n: "{{ untrusted_count | int }}"
+        trusted_n: "{{ trusted_count | int }}"
+        total_n: "{{ (untrusted_count | int) + (trusted_count | int) }}"
+        ip_base: "{{ client_ip_base }}"
+        ip_start: "{{ client_ip_start | int }}"
+
+    - name: Sanity check client IP last octet
+      ansible.builtin.assert:
+        that:
+          - ((ip_start | int) + (total_n | int) - 1) < 255
+        fail_msg: "Client IPs would overflow the last octet. Reduce counts or lower client_ip_start."
+
+    # Build clients
+    - name: Init client lists
+      ansible.builtin.set_fact:
+        clients_untrusted: []
+        clients_trusted: []
+
+    - name: Build UNTRUSTED clients
+      ansible.builtin.set_fact:
+        clients_untrusted: "{{ clients_untrusted + [ {
+          'type': 'untrusted',
+          'name': 'untrusted-client-' ~ (item | int | string),
+          'container': 'untrusted-client-' ~ (item | int | string),
+          'id': (item | int),
+          'workdir': '/epollbook/build/apps/docker-test-deployment/client' ~ (item | int | string),
+          'ip': ip_base ~ '.' ~ (((ip_start | int) + (item | int)) | string),
+          'build': '.'
+        } ] }}"
+      loop: "{{ range(0, (untrusted_n | int)) | list }}"
+
+    - name: Build TRUSTED clients
+      ansible.builtin.set_fact:
+        clients_trusted: "{{ clients_trusted + [ {
+          'type': 'trusted',
+          'name': 'trusted-client-' ~ (((untrusted_n | int) + (item | int)) | string),
+          'container': 'trusted-client-' ~ (((untrusted_n | int) + (item | int)) | string),
+          'id': ((untrusted_n | int) + (item | int)),
+          'workdir': '/epollbook/build/apps/docker-test-deployment/client' ~ (((untrusted_n | int) + (item | int)) | string),
+          'ip': ip_base ~ '.' ~ (((ip_start | int) + (untrusted_n | int) + (item | int)) | string),
+          'build': '.'
+        } ] }}"
+      loop: "{{ range(0, (trusted_n | int)) | list }}"
+
+    - name: Merge client lists
+      ansible.builtin.set_fact:
+        clients_generated: "{{ (clients_untrusted | default([])) + (clients_trusted | default([])) }}"
+
+    # Build services as dict
+    - name: Build checkin service object
+      ansible.builtin.set_fact:
+        checkin_service: >-
+          {{
+            {
+              ('image' if (checkin.image is defined) else 'build'): (checkin.image if (checkin.image is defined) else (checkin.build | default('.'))),
+              'container_name': checkin.container,
+              'tty': True,
+              'stdin_open': True,
+              'working_dir': checkin.workdir,
+              'networks': { 'pollbook': ({ 'ipv4_address': network.checkin_host } if (network.checkin_host is defined) else {}) },
+              'develop': { 'watch': [ { 'path': '.', 'target': '/epollbook', 'action': 'sync' } ] }
+            }
+          }}
+
+    - name: Build id_server service object
+      ansible.builtin.set_fact:
+        id_service: >-
+          {{
+            {
+              ('image' if (id_server.image is defined) else 'build'): (id_server.image if (id_server.image is defined) else (id_server.build | default('.'))),
+              'container_name': id_server.container,
+              'tty': True,
+              'stdin_open': True,
+              'working_dir': id_server.workdir,
+              'networks': { 'pollbook': ({ 'ipv4_address': network.id_host } if (network.id_host is defined) else {}) },
+              'develop': { 'watch': [ { 'path': '.', 'target': '/epollbook', 'action': 'sync' } ] }
+            }
+          }}
+
+    - name: Build client services dict
+      ansible.builtin.set_fact:
+        client_services: "{{ client_services | default({}) | combine({ item.name: {
+          ('image' if (item.image is defined) else 'build'): (item.image if (item.image is defined) else (item.build | default('.'))),
+          'container_name': item.container,
+          'tty': True,
+          'stdin_open': True,
+          'working_dir': item.workdir,
+          'networks': { 'pollbook': { 'ipv4_address': item.ip } },
+          'environment': { 'CLIENT_ID': item.id, 'TRUSTED': (1 if item.type == 'trusted' else 0) },
+          'develop': { 'watch': [ { 'path': '.', 'target': '/epollbook', 'action': 'sync' } ] }
+        }}) }}"
+      loop: "{{ clients_generated }}"
+
+    - name: Build services_all
+      ansible.builtin.set_fact:
+        services_all: "{{ { 'checkin': checkin_service, 'dummy-id': id_service } | combine(client_services | default({})) }}"
+
+    # ---- split facts so each depends on the previous one safely ----
+    - name: Build ipam_entry
+      ansible.builtin.set_fact:
+        ipam_entry: "{{ {'subnet': (network.subnet | default('172.16.0.0/16'))} | combine( ({'gateway': network.gateway}) if (network.gateway is defined) else {} ) }}"
+
+    - name: Build networks_obj
+      ansible.builtin.set_fact:
+        networks_obj: "{{ { 'pollbook': { 'ipam': { 'config': [ ipam_entry ] } } } }}"
+
+    - name: Build compose_obj
+      ansible.builtin.set_fact:
+        compose_obj: "{{ { 'services': services_all, 'networks': networks_obj } }}"
+
+    # Write compose.yaml (no template)
+    - name: Write compose.yaml from object (spaces only, valid YAML)
+      ansible.builtin.copy:
+        dest: "{{ playbook_dir }}/../compose.yaml"
+        mode: "0644"
+        content: "{{ compose_obj | to_nice_yaml(indent=2) }}"
 
   tasks:
-    - name: Step 1 – Make generate_keys.sh executable
-      file:
-        path: ../apps/docker-test-deployment/generate_keys.sh
+    # Show & validate before touching containers
+    - name: Show compose.yaml (first 80 lines, numbered)
+      ansible.builtin.shell: "nl -ba compose.yaml | sed -n '1,80p'"
+      args: { chdir: "{{ playbook_dir }}/.." }
+      changed_when: false
+      register: compose_head
+
+    - name: Print compose head
+      ansible.builtin.debug:
+        msg: "{{ compose_head.stdout }}"
+
+    - name: Validate generated compose.yaml
+      ansible.builtin.shell: docker compose -f compose.yaml config -q
+      args: { chdir: "{{ playbook_dir }}/.." }
+      changed_when: false
+
+    # Bring the stack up
+    - name: Make generate_keys.sh executable
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/../apps/docker-test-deployment/generate_keys.sh"
         mode: '0755'
 
-    - name: Step 2 – Run the key/cert generation script
-      command: ../apps/docker-test-deployment/generate_keys.sh
+    - name: Run key/cert generation
+      ansible.builtin.command: ./apps/docker-test-deployment/generate_keys.sh
+      args: { chdir: "{{ playbook_dir }}/.." }
 
-    - name: Step 3 – Stop and remove any previous Docker containers
-      shell: docker compose down || true
-      args:
-        chdir: "{{ playbook_dir }}/.."
+    - name: docker compose down (clean)
+      ansible.builtin.shell: docker compose down --remove-orphans
+      args: { chdir: "{{ playbook_dir }}/.." }
 
-    - name: Step 4 – Build images and start all Docker containers
-      shell: docker compose up --build -d
-      args:
-        chdir: "{{ playbook_dir }}/.."
+    - name: docker compose up
+      ansible.builtin.shell: docker compose up -d --build
+      args: { chdir: "{{ playbook_dir }}/.." }
 
-    - name: Step 5 – Wait for containers to be up (4s delay)
-      pause:
-        seconds: 4
+    - name: Small pause
+      ansible.builtin.pause:
+        seconds: 3
 
-    - name: Step 6 – Run the correct binary in each container
-      shell: |
-        docker exec -d -w {{ item.value.workdir }} {{ item.key }} {{ item.value.binary }}
-      with_dict: "{{ run_map }}"
-      register: run_results
-      ignore_errors: yes
+    - name: Start checkin
+      ansible.builtin.shell: >
+        docker exec -d -w {{ checkin.workdir }}
+        {{ checkin.container }} ../../server
 
-    - name: Step 7 – Print the results for each container
-      debug:
-        var: run_results
+    - name: Start id_server
+      ansible.builtin.shell: >
+        docker exec -d -w {{ id_server.workdir }}
+        {{ id_server.container }} ../../id_server
+
+    - name: Start clients
+      ansible.builtin.shell: >
+        docker exec -d -w {{ item.workdir }} {{ item.container }}
+        {{ '../../secure_client' if item.type == 'trusted' else '../../client' }}
+      loop: "{{ clients_generated }}"
+      loop_control:
+        label: "{{ item.container }} ({{ item.ip }})"
 

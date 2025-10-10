@@ -1,74 +1,85 @@
 ---
-- name: Rebuild C++ binaries and restart all E-Pollbook processes
+- name: Rebuild C++ binaries and restart all E-Pollbook processes (dynamic)
   hosts: localhost
   gather_facts: false
 
   vars:
-    # Container → where to start the binary inside the container
-    run_map:
-      pollbook-server-checkin-1:
-        workdir: /epollbook/build/apps/docker-test-deployment/checkin_server
-        binary: ../../server
-        process_match: '^(.*/)?server$'
-      pollbook-server-dummy-id-1:
-        workdir: /epollbook/build/apps/docker-test-deployment/id_server
-        binary: ../../id_server
-        process_match: '^(.*/)?id_server$'
-      pollbook-server-untrusted-client-0-1:
-        workdir: /epollbook/build/apps/docker-test-deployment/client0
-        binary: ../../client
-        process_match: '^(.*/)?client$'
-      pollbook-server-trusted-client-1-1:
-        workdir: /epollbook/build/apps/docker-test-deployment/client1
-        binary: ../../secure_client
-        process_match: '^(.*/)?secure_client$'
-      pollbook-server-untrusted-client-2-1:
-        workdir: /epollbook/build/apps/docker-test-deployment/client2
-        binary: ../../client
-        process_match: '^(.*/)?client$'
-      pollbook-server-trusted-client-3-1:
-        workdir: /epollbook/build/apps/docker-test-deployment/client3
-        binary: ../../secure_client
-        process_match: '^(.*/)?secure_client$'
+    project_dir: "{{ playbook_dir }}/.."
+
+  pre_tasks:
+    - name: Load vars (host_vars/all.yml → sc)
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/host_vars/all.yml"
+        name: sc
 
   tasks:
-    - name: Build project inside each container
+    - name: Build inside checkin container
       ansible.builtin.shell: >
-        docker exec -w /epollbook/build {{ item.key }}
-        cmake --build . --parallel
-      with_dict: "{{ run_map }}"
-      register: build_out
+        docker exec -w /epollbook/build {{ sc.services.checkin.container }}
+        bash -lc 'cmake .. && cmake --build . -j'
+      register: build_checkin
       changed_when: true
 
-    - name: Stop running process (best-effort)
+    - name: Build inside id_server container
       ansible.builtin.shell: >
-        docker exec {{ item.key }} bash -lc
-        "pkill -f '{{ item.value.process_match }}' || true"
-      with_dict: "{{ run_map }}"
-      changed_when: false
-
-    - name: Start binary in each container (detached)
-      ansible.builtin.shell: >
-        docker exec -d -w {{ item.value.workdir }} {{ item.key }}
-        {{ item.value.binary }}
-      with_dict: "{{ run_map }}"
-      register: start_out
+        docker exec -w /epollbook/build {{ sc.services.id_server.container }}
+        bash -lc 'cmake .. && cmake --build . -j'
+      register: build_id
       changed_when: true
 
-    - name: Show PIDs after restart
+    - name: Build inside client containers
       ansible.builtin.shell: >
-        docker exec {{ item.key }} pgrep -fa '{{ item.value.process_match }}'
-      with_dict: "{{ run_map }}"
-      register: pids
+        docker exec -w /epollbook/build {{ item.container }}
+        bash -lc 'cmake .. && cmake --build . -j'
+      loop: "{{ sc.clients }}"
+      loop_control: { label: "{{ item.name }}" }
+      register: build_clients
+      changed_when: true
+
+    # ----- stop processes (best effort) -----
+    - name: Stop checkin (best-effort)
+      ansible.builtin.shell: >
+        docker exec {{ sc.services.checkin.container }} bash -lc
+        "pkill -f '^(.*/)?server$' || true"
       changed_when: false
 
-    - name: Build logs (compact)
-      ansible.builtin.debug:
-        var: build_out.results | map(attribute='stderr') | list
-      when: build_out is defined
+    - name: Stop id_server (best-effort)
+      ansible.builtin.shell: >
+        docker exec {{ sc.services.id_server.container }} bash -lc
+        "pkill -f '^(.*/)?id_server$' || true"
+      changed_when: false
 
-    - name: New PIDs
+    - name: Stop client processes (best-effort)
+      ansible.builtin.shell: >
+        docker exec {{ item.container }} bash -lc
+        "pkill -f '^(.*/)?{{ "secure_client" if item.type == "trusted" else "client" }}$' || true"
+      loop: "{{ sc.clients }}"
+      loop_control: { label: "{{ item.name }}" }
+      changed_when: false
+
+    # ----- start processes -----
+    - name: Start checkin
+      ansible.builtin.shell: >
+        docker exec -d -w {{ sc.services.checkin.workdir }}
+        {{ sc.services.checkin.container }} ../../server
+
+    - name: Start id_server
+      ansible.builtin.shell: >
+        docker exec -d -w {{ sc.services.id_server.workdir }}
+        {{ sc.services.id_server.container }} ../../id_server
+
+    - name: Start clients
+      ansible.builtin.shell: >
+        docker exec -d -w {{ item.workdir }} {{ item.container }}
+        {{ '../../secure_client' if item.type == 'trusted' else '../../client' }}
+      loop: "{{ sc.clients }}"
+      loop_control: { label: "{{ item.name }}" }
+
+    # ----- optional debug summaries -----
+    - name: Show build outputs (compact)
       ansible.builtin.debug:
-        var: pids.results | map(attribute='stdout') | list
-      when: pids is defined
+        msg:
+          - "checkin: {{ (build_checkin.stderr|default('')).splitlines()[-5:] }}"
+          - "id_server: {{ (build_id.stderr|default('')).splitlines()[-5:] }}"
+          - "clients count: {{ (build_clients.results|default([]))|length }}"
 
