@@ -22,11 +22,14 @@ WORKDIR /epollbook
 
 # json-build stage: Used only for building the nlohmann-json dependency, which isn't in apt
 FROM base AS json-build
-# Download, compile, and install to the default /usr/local/ location
-ADD https://github.com/nlohmann/json.git#v3.12.0 nlohmann_json
-RUN cd nlohmann_json && \
+# Download and install headers to the default /usr/local/ location.
+# JSON_BuildTests=OFF skips nlohmann/json's unit-test suite, which otherwise
+# compiles dozens of memory-heavy TUs in parallel and can exhaust host RAM.
+RUN git clone --branch v3.12.0 --depth 1 https://github.com/nlohmann/json.git nlohmann_json && \
+    cd nlohmann_json && \
     mkdir build && cd build && \
-    cmake .. && make -j$(nproc) && \
+    cmake .. -DJSON_BuildTests=OFF && \
+    make -j4 && \
     make install
 
 # Dev stage: Creates the final image used for developing the pollbook project,

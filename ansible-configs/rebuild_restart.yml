@@ -16,21 +16,21 @@
     - name: Build inside checkin container
       ansible.builtin.shell: >
         docker exec -w /epollbook/build {{ sc.services.checkin.container }}
-        bash -lc 'cmake .. && cmake --build . -j'
+        bash -lc 'cmake .. && cmake --build . -j4'
       register: build_checkin
       changed_when: true
 
     - name: Build inside id_server container
       ansible.builtin.shell: >
         docker exec -w /epollbook/build {{ sc.services.id_server.container }}
-        bash -lc 'cmake .. && cmake --build . -j'
+        bash -lc 'cmake .. && cmake --build . -j4'
       register: build_id
       changed_when: true
 
     - name: Build inside client containers
       ansible.builtin.shell: >
         docker exec -w /epollbook/build {{ item.container }}
-        bash -lc 'cmake .. && cmake --build . -j'
+        bash -lc 'cmake .. && cmake --build . -j4'
       loop: "{{ sc.clients }}"
       loop_control: { label: "{{ item.name }}" }
       register: build_clients

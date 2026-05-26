@@ -317,7 +317,11 @@ async def main_async(a):
         proc, pump = await start_forever(a.compose_dir, a.compose_cmd, svc, cmd, logp)
         server_procs_tasks.append((proc, pump))
 
-    # Start trusted TCP servers (log to logs/<service>/trusted.log)
+    # Give servers time to bind/listen before trusted clients connect
+    # (avoids ConnectionRefusedError when trusted fetches checkin pubkey)
+    await asyncio.sleep(3.0)
+
+    # Start trusted TCP servers
     trusted_procs_tasks = []
     for svc in a.trusted:
         logp = service_dir(a.log_dir, svc) / "trusted.log"

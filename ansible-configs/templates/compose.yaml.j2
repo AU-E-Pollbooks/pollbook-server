@@ -1,14 +1,14 @@
 services:
+  # checkin builds image_name once; every other service reuses that image so
+  # the stack performs a single docker build instead of one build per container.
   checkin:
-    {% if checkin.image is defined %}
-    image: {{ checkin.image }}
-    {% else %}
     build: {{ checkin.build | default('.') }}
-    {% endif %}
+    image: {{ image_name | default('epollbook:latest') }}
     container_name: {{ checkin.container }}
     tty: true
     stdin_open: true
     working_dir: {{ checkin.workdir }}
+    mem_limit: {{ container_mem_limit | default('8g') }}
     networks:
       pollbook:
         {% if network.checkin_host is defined %}ipv4_address: "{{ network.checkin_host }}"{% endif %}
@@ -19,15 +19,12 @@ services:
           action: sync
 
   dummy-id:
-    {% if id_server.image is defined %}
-    image: {{ id_server.image }}
-    {% else %}
-    build: {{ id_server.build | default('.') }}
-    {% endif %}
+    image: {{ image_name | default('epollbook:latest') }}
     container_name: {{ id_server.container }}
     tty: true
     stdin_open: true
     working_dir: {{ id_server.workdir }}
+    mem_limit: {{ container_mem_limit | default('8g') }}
     networks:
       pollbook:
         {% if network.id_host is defined %}ipv4_address: "{{ network.id_host }}"{% endif %}
@@ -39,15 +36,12 @@ services:
 
   {% for c in clients_generated %}
   {{ c.name }}:
-    {% if c.image is defined %}
-    image: {{ c.image }}
-    {% else %}
-    build: {{ c.build | default('.') }}
-    {% endif %}
+    image: {{ image_name | default('epollbook:latest') }}
     container_name: {{ c.container }}
     tty: true
     stdin_open: true
     working_dir: {{ c.workdir }}
+    mem_limit: {{ container_mem_limit | default('8g') }}
     networks:
       pollbook:
         ipv4_address: "{{ c.ip }}"
