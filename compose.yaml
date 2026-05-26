@@ -1,83 +1,128 @@
-services:
-  checkin:
-    build: .
-    tty: true
-    stdin_open: true
-    working_dir: /epollbook/build/apps/docker-test-deployment/checkin_server
-    develop:
-      watch:
-        - path: .
-          target: /epollbook
-          action: sync
-    networks:
-      pollbook:
-        ipv4_address: 172.16.0.5
-  dummy-id:
-    build: .
-    tty: true
-    stdin_open: true
-    working_dir: /epollbook/build/apps/docker-test-deployment/id_server
-    develop:
-      watch:
-        - path: .
-          target: /epollbook
-          action: sync
-    networks:
-      pollbook:
-        ipv4_address: 172.16.0.6
-  untrusted-client-0:
-    build: .
-    tty: true
-    stdin_open: true
-    working_dir: /epollbook/build/apps/docker-test-deployment/client0
-    networks: [pollbook]
-    environment:
-      TRUSTED_NAME: trusted-client-1
-
-  trusted-client-1:
-    build: .
-    tty: true
-    stdin_open: true
-    working_dir: /epollbook/build/apps/docker-test-deployment/client1
-    develop:
-      watch:
-        - path: .
-          target: /epollbook
-          action: sync
-    networks: [pollbook]
-    environment:
-      TRUSTED_NAME: trusted-client-1
-
-  untrusted-client-2:
-    build: .
-    tty: true
-    stdin_open: true
-    working_dir: /epollbook/build/apps/docker-test-deployment/client2
-    networks: [pollbook]
-    develop:
-      watch:
-        - path: .
-          target: /epollbook
-          action: sync
-    environment:
-      TRUSTED_NAME: trusted-client-3
-
-  trusted-client-3:
-    build: .
-    tty: true
-    stdin_open: true
-    working_dir: /epollbook/build/apps/docker-test-deployment/client3
-    develop:
-      watch:
-        - path: .
-          target: /epollbook
-          action: sync
-    networks: [pollbook]
-
 networks:
   pollbook:
     ipam:
-      driver: default
       config:
-        - subnet: 172.16.0.0/16
-          gateway: 172.16.0.1
+      - gateway: 172.16.0.1
+        subnet: 172.16.0.0/16
+services:
+  checkin:
+    build: .
+    container_name: checkin
+    cpuset: '0'
+    develop:
+      watch:
+      - action: sync
+        path: .
+        target: /epollbook
+    environment:
+      PYTHONUNBUFFERED: '1'
+      SERVICE_ROLE: checkin
+      TZ: America/New_York
+    image: epollbook:latest
+    mem_limit: 8g
+    networks:
+      pollbook:
+        ipv4_address: 172.16.0.5
+    stdin_open: true
+    tty: true
+    working_dir: /epollbook/build/apps/docker-test-deployment/checkin_server
+  dummy-id:
+    container_name: dummy-id
+    cpuset: '0'
+    develop:
+      watch:
+      - action: sync
+        path: .
+        target: /epollbook
+    environment:
+      PYTHONUNBUFFERED: '1'
+      SERVICE_ROLE: id
+      TZ: America/New_York
+    image: epollbook:latest
+    mem_limit: 8g
+    networks:
+      pollbook:
+        ipv4_address: 172.16.0.6
+    stdin_open: true
+    tty: true
+    working_dir: /epollbook/build/apps/docker-test-deployment/id_server
+  trusted-client-1:
+    container_name: trusted-client-1
+    develop:
+      watch:
+      - action: sync
+        path: .
+        target: /epollbook
+    environment:
+      CLIENT_ID: '1'
+      PYTHONUNBUFFERED: '1'
+      TRUSTED: '1'
+      TZ: America/New_York
+    image: epollbook:latest
+    mem_limit: 8g
+    networks:
+      pollbook:
+        ipv4_address: 172.16.0.102
+    stdin_open: true
+    tty: true
+    working_dir: /epollbook/build/apps/docker-test-deployment/client1
+  trusted-client-3:
+    container_name: trusted-client-3
+    develop:
+      watch:
+      - action: sync
+        path: .
+        target: /epollbook
+    environment:
+      CLIENT_ID: '3'
+      PYTHONUNBUFFERED: '1'
+      TRUSTED: '1'
+      TZ: America/New_York
+    image: epollbook:latest
+    mem_limit: 8g
+    networks:
+      pollbook:
+        ipv4_address: 172.16.0.103
+    stdin_open: true
+    tty: true
+    working_dir: /epollbook/build/apps/docker-test-deployment/client3
+  untrusted-client-0:
+    container_name: untrusted-client-0
+    develop:
+      watch:
+      - action: sync
+        path: .
+        target: /epollbook
+    environment:
+      CLIENT_ID: '0'
+      PYTHONUNBUFFERED: '1'
+      TRUSTED: '0'
+      TZ: America/New_York
+    image: epollbook:latest
+    mem_limit: 8g
+    networks:
+      pollbook:
+        ipv4_address: 172.16.0.100
+    stdin_open: true
+    tty: true
+    working_dir: /epollbook/build/apps/docker-test-deployment/client0
+  untrusted-client-2:
+    container_name: untrusted-client-2
+    develop:
+      watch:
+      - action: sync
+        path: .
+        target: /epollbook
+    environment:
+      CLIENT_ID: '2'
+      PYTHONUNBUFFERED: '1'
+      TRUSTED: '0'
+      TZ: America/New_York
+    image: epollbook:latest
+    mem_limit: 8g
+    networks:
+      pollbook:
+        ipv4_address: 172.16.0.101
+    stdin_open: true
+    tty: true
+    working_dir: /epollbook/build/apps/docker-test-deployment/client2
