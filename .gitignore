@@ -4,9 +4,9 @@ build*
 # logs and artifacts
 logs/*
 artifacts/*
-ansible-config/logs/*
-ansible-config/artifacts/*
-ansible-config/tests/
+ansible-configs/logs/*
+ansible-configs/artifacts/*
+ansible-configs/tests/
 apps/docker-test-deployment/*
 # VS Code settings
 .vscode
