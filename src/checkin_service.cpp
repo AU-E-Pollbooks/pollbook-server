@@ -265,6 +265,7 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
     );
     if (std::to_string(request.body.pin) != voter_info["pin"]) {
         logger->warn("Wrong Pin!");
+        return;
     }
     if(client_verifiers.find(request.body.client_id) == client_verifiers.end()) {
         if(!load_client_public_key(request.body.client_id)) {
