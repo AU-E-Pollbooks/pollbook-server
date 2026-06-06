@@ -94,8 +94,8 @@ void VoterIDService::handle_accept(const asio::error_code& error, asio::ip::tcp:
                         } else {
                             std::cerr << "Error extracting public key" << std::endl;
                         }
-                        // Clean up
-                        X509_free(clientCert);
+                        // // Clean up
+                        // X509_free(clientCert);
                     } else {
                         std::cerr << "No certificate received from client" << std::endl;
                     }
