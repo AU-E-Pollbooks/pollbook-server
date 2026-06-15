@@ -580,7 +580,7 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
     nlohmann::json response_json = CheckinResponse::ToJson(response);
 
     std::string response_message_string = response_json.dump();
-    std::size_t response_size = response_json.size();
+    std::size_t response_size = response_message_string.size();
     std::string response_string = std::to_string(response_size) + "\n" + response_message_string +"\n";
 
     logger->debug("Sending a response of size {} to client at {}: {}", response_size, client_ip, response_message_string);
