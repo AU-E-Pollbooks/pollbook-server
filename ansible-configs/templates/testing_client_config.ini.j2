@@ -1,0 +1,27 @@
+[Basic]
+client_id = {{ client_id }}
+checkin_service_host = {{ network.checkin_host }}
+checkin_service_port = {{ checkin_service_port }}
+id_service_host = {{ network.id_host }}
+id_service_port = {{ network.id_port }}
+log_level = {{ cfg_log_level }}
+{% if is_trusted %}
+listen_host = 0.0.0.0
+listen_port = {{ trusted_listen_port }}
+{% else %}
+ticket_sink_host = {{ ticket_sink_ip }}
+ticket_sink_port = {{ ticket_sink_port }}
+pin_csv = {{ pin_csv }}
+voters_csv = {{ voters_csv }}
+{% endif %}
+
+[Security]
+private_key = private_key.pem
+{% if is_trusted %}
+id_service_public_key = id_pubkey.pem
+checkin_service_public_key = checkin_pubkey.pem
+checkin_service_cert = checkin_certificate.pem
+id_service_cert = id_certificate.pem
+{% endif %}
+local_cert = certificate.pem
+ca_cert = ca/ca_cert.pem

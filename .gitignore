@@ -1,13 +1,32 @@
 # Build output directories
 build*
 
-# logs and artifacts
+# Logs and run outputs
 logs/*
 artifacts/*
 ansible-configs/logs/*
 ansible-configs/artifacts/*
 ansible-configs/tests/
+ansible-configs/backups/
+
+# Generated deployment tree: certs (generate_keys.sh), configs (ansible
+# templates), per-client CSVs (copied from the root datasets). Keep the scripts.
 apps/docker-test-deployment/*
+!apps/docker-test-deployment/generate_keys.sh
+!apps/docker-test-deployment/delete_keys.sh
+
+# Stale/unreferenced PKI copies + root key-gen output
+ansible-configs/ca/
+ansible-configs/client*/
+ansible-configs/checkin_server/
+ansible-configs/id_server/
+server0/
+server1/
+
+# Python
+__pycache__/
+*.pyc
+
 # VS Code settings
 .vscode
 

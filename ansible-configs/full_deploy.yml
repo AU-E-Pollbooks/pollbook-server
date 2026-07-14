@@ -54,7 +54,6 @@
     - name: Load static vars (host_vars/all.yml -> sc)
       ansible.builtin.include_vars:
         file: "{{ playbook_dir }}/host_vars/all.yml"
-        name: sc
 
     # Flatten + defaults
     - name: Prepare network defaults
