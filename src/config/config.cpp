@@ -65,7 +65,7 @@ void Config::initialize(const std::string& config_file_path) {
            expected_uninitialized, STATE_INITIALIZING, std::memory_order_acq_rel)) {
         // make_unique doesn't work if the constructor is private
         instance = std::unique_ptr<Config>(new Config(config_file_path));
-        singleton_initialized_flag.store(STATE_INITIALIZED, std::memory_order_acq_rel);
+        singleton_initialized_flag.store(STATE_INITIALIZED, std::memory_order_release);
     }
     // make sure concurrent callers only return when initialization has finished
     while(singleton_initialized_flag.load(std::memory_order_acquire) != STATE_INITIALIZED) {
