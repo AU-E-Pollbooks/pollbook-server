@@ -264,7 +264,7 @@ bool VoterIDService::validate_voter_name(const std::string& first_name,
                                          const std::string& middle_name, 
                                          const std::string& last_name,
                                          std::uint32_t voter_unique_id) {
-    auto it = voter_data[voter_unique_id];
+    auto it = voter_data.find(voter_unique_id);
     if(it == voter_data.end() || it->second.size() < 8) {
         logger->warn("No voter record for UID {} (or malformed record); rejecting validation request.",
                      voter_unique_id);

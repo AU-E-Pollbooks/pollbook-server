@@ -265,6 +265,26 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
     );
     if (std::to_string(request.body.pin) != voter_info["pin"]) {
         logger->warn("Wrong Pin!");
+        TicketResponse::Body response_body(
+            false,
+            voter_info["last_name"],
+            voter_info["first_name"],
+            voter_info["middle_name"],
+            voter_id,
+            "",
+            request.body.pin
+        );
+        nlohmann::json body_json = TicketResponse::Body::ToJson(response_body);
+        std::string body_string = body_json.dump();
+        signer.init();
+        signer.add_bytes(body_string.data(), body_string.size());
+        TicketResponse response(std::move(response_body), signer.finalize());
+        std::string response_str = TicketResponse::ToJson(response).dump() + "\n";
+        asio::error_code ec;
+        asio::write(*(client_ssl_streams.at(client_ip)), asio::buffer(response_str), ec);
+        if (ec) {
+            logger->debug("Failed sending wrong-PIN denial: {}", ec.message());
+        }
         return;
     }
     if(client_verifiers.find(request.body.client_id) == client_verifiers.end()) {
@@ -516,17 +536,18 @@ void CheckinService::write_to_csv(const std::string& ticket, const std::string& 
 }
 
 void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& client_ip, const CheckinRequest& request) {
-    // Ensure the client id in the message is the same as the client id in the pubkey
+    // Ensure the client id in the message matches the TLS-authenticated (cert-derived) client id
     uint32_t client_id = client_id_map[client_ip];
-    if (request.body.client_id_num != client_id) {
-        logger->warn("Client ID in the message and the client ID in the public do not match!");
-    }
-    // Ensure the public key for this client is in memory
-    if(client_verifiers.find(request.body.client_id_num) == client_verifiers.end()) {
-        if(!load_client_public_key(request.body.client_id_num)) {
-            logger->warn("Could not load the public key for client number {}. Ignoring a voter ID validation request.", request.body.client_id_num);
-            return;
-        }
+    bool identity_ok = (request.body.client_id_num == client_id);
+    if (!identity_ok) {
+        // The client is claiming to be a different client (spoofed identity). Reject it, file a
+        // fault, and fall through to send a signed approved=false response. We must NOT try to
+        // load request.body.client_id_num's public key on its say-so — a missing key file would
+        // otherwise drive a request for an identity we never authenticated (and historically
+        // crashed the server via an uncaught file_not_found).
+        logger->warn("Rejecting check-in request: claimed client_id_num {} does not match TLS-authenticated client {} (spoofed client identity)",
+                     request.body.client_id_num, client_id);
+        FaultTracker::getInstance().reportFault(client_id, "Claimed client_id_num does not match TLS-authenticated client identity");
     }
 
     auto current_time = std::chrono::system_clock::now();
@@ -534,21 +555,46 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
                                      current_time.time_since_epoch())
                                      .count();
     bool accept = false;
-    if(validate_client_request(request, current_timestamp)) {
-        auto find_voter_result = voter_status_table.find(request.body.voter_unique_id);
-        if(find_voter_result != voter_status_table.end()) {
-            if(find_voter_result->second == VoterStatus::ELIGIBLE) {
-                find_voter_result->second = VoterStatus::PENDING;
-                logger->debug("Accepted a check-in request for voter {} {} {} (UID {}) from client {}", request.body.first_name, request.body.middle_name, request.body.last_name, request.body.voter_unique_id, request.body.client_id_num);
-                accept = true;
-                start_timer(request.body.voter_unique_id);
-            } else {
-                logger->debug("Rejecting client {}'s check-in request for {} {} {} (UID {}) because the voter has already checked in",
-                              request.body.client_id_num, request.body.first_name, request.body.middle_name, request.body.last_name, request.body.voter_unique_id);
+
+    nlohmann::json j = CheckinRequest::Body::ToJson(request.body);
+    std::string cpp_dump = j.dump();
+    std::string cpp_base64 = Base64::encode(
+        reinterpret_cast<const uint8_t*>(cpp_dump.data()),
+        cpp_dump.size());
+    nlohmann::json request_json = CheckinRequest::ToJson(request);
+    std::string request_message_string = request_json.dump();
+
+    if (identity_ok) {
+        // Ensure the public key for this client is in memory
+        if(client_verifiers.find(request.body.client_id_num) == client_verifiers.end()) {
+            if(!load_client_public_key(request.body.client_id_num)) {
+                logger->warn("Could not load the public key for client number {}. Ignoring a voter ID validation request.", request.body.client_id_num);
+                return;
             }
-        } else {
-            logger->debug("Rejecting client {}'s check-in request for {} {} {} (UID {}) because the voter is not in the server's voter status table",
-                           request.body.client_id_num, request.body.first_name, request.body.middle_name, request.body.last_name, request.body.voter_unique_id);
+        }
+
+        if(validate_client_request(request, current_timestamp)) {
+            auto find_voter_result = voter_status_table.find(request.body.voter_unique_id);
+            if(find_voter_result != voter_status_table.end()) {
+                if(find_voter_result->second == VoterStatus::ELIGIBLE) {
+                    find_voter_result->second = VoterStatus::PENDING;
+                    logger->debug("Accepted a check-in request for voter {} {} {} (UID {}) from client {}",
+                                  request.body.first_name, request.body.middle_name, 
+                                  request.body.last_name, request.body.voter_unique_id, 
+                                  request.body.client_id_num);
+                    accept = true;
+                    start_timer(request.body.voter_unique_id);
+                } else {
+                    std::cout << "Voter not found\n";
+                    logger->debug("Rejecting client {}'s check-in request for {} {} {} (UID {}) because the voter has already checked in",
+                                  request.body.client_id_num, request.body.first_name, 
+                                  request.body.middle_name, request.body.last_name, 
+                                  request.body.voter_unique_id);
+                }
+            } else {
+                logger->debug("Rejecting client {}'s check-in request for  {} {} {} (UID {}) because the voter is not in the server's voter status table",
+                               request.body.client_id_num, request.body.first_name, request.body.middle_name, request.body.last_name, request.body.voter_unique_id);
+            }
         }
     }
 
@@ -565,8 +611,9 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
         secret = "";
     }
     CheckinResponse::Body response_body(accept, request.body.client_id_num,
-                                        current_timestamp, request.body.last_name, request.body.first_name,
-                                        request.body.middle_name, request.body.voter_unique_id, ticket);
+                                        current_timestamp, request.body.last_name, 
+                                        request.body.first_name, request.body.middle_name, 
+                                        request.body.voter_unique_id, ticket);
     // Sign the body of the response message with the service's key
     std::string response_body_str = CheckinResponse::Body::ToJson(response_body).dump();
 
@@ -588,7 +635,6 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
     // Enqueue another read operation for the next message from this client (if any)
     start_size_read(client_ip);
 }
-
 void CheckinService::start_timer(const std::uint32_t voter_id) {
     auto timer = std::make_shared<Timer>(network_io_context);
     int time_interval = Config::getInt32(Config::SECTION_SECURITY, Config::TIMEOUT_INTERVAL);
@@ -611,6 +657,12 @@ void CheckinService::handle_verification_timeout(const std::uint32_t voter_id) {
     logger->debug("Check-in request for voter {} timed out", voter_id);
     std::lock_guard<std::mutex> unlock(mtx);
     request_timers.erase(voter_id);
+
+    auto it = voter_status_table.find(voter_id);
+    if (it != voter_status_table.end() && it->second == VoterStatus::PENDING) {
+        it->second = VoterStatus::ELIGIBLE;
+        logger->debug("Reverted voter {} from PENDING back to ELIGIBLE after check-in timeout", voter_id);
+    }
 }
 
 bool CheckinService::validate_client_request(const CheckinRequest& request, std::uint64_t current_timestamp) {
@@ -622,10 +674,12 @@ bool CheckinService::validate_client_request(const CheckinRequest& request, std:
     verifier.add_bytes(request_body_str.data(), request_body_str.size());
 
     if(!verifier.finalize(request.client_signature)) {
-        logger->debug("Rejecting client {}'s check-in request for {} {} {} (UID {}) because the client's signature on the message was invalid",
+        logger->warn("Rejecting client {}'s check-in request for {} {} {} (UID {}) because the client's signature on the message was invalid",
                       request.body.client_id_num, request.body.first_name, request.body.middle_name, request.body.last_name, request.body.voter_unique_id);
+        FaultTracker::getInstance().reportFault(client_id, "Invalid client signature on check-in request (tampered body)");
         return false;
     }
+
     // If the client's signature was valid, verify the ID service's signature
     nlohmann::json voter_id_json;
     voter_id_json["presented_id"] = VoterIDRequest::ToJson(request.body.verified_id_message.presented_id);
@@ -637,6 +691,14 @@ bool CheckinService::validate_client_request(const CheckinRequest& request, std:
     if(!id_service_verifier.finalize(request.body.verified_id_message.id_service_signature)) {
         logger->debug("Rejecting client {}'s check-in request for {} {} {} (UID {}) because the signature on the ID verification was invalid",
                       request.body.client_id_num, request.body.first_name, request.body.middle_name, request.body.last_name, request.body.voter_unique_id);
+        return false;
+    }
+
+    // ID-service signature is valid; reject if the client claims a different voter than the ID service verified (cross-identity forwarding)
+    if (request.body.voter_unique_id != request.body.verified_id_message.voter_unique_id) {
+        logger->warn("Rejecting client {}'s check-in: claimed UID {} != ID-verified UID {} (cross-identity forwarding)",
+                     request.body.client_id_num, request.body.voter_unique_id, request.body.verified_id_message.voter_unique_id);
+        FaultTracker::getInstance().reportFault(client_id, "Claimed voter UID does not match ID-service-verified UID");
         return false;
     }
     // If the ID service's signature was valid, check the timestamp
@@ -654,6 +716,7 @@ bool CheckinService::validate_client_request(const CheckinRequest& request, std:
     logger->debug("Client {}'s check-in request passed validation", request.body.client_id_num);
     return true;
 }
+
 
 void CheckinService::run() {
     // Post the first asynchronous accept
@@ -677,8 +740,8 @@ bool CheckinService::load_client_public_key(std::uint32_t client_id) {
         client_public_keys.emplace(client_id, envelope_key);
         openssl::Verifier client_verifier(envelope_key, signature_digest_algorithm);
         client_verifiers.emplace(client_id, std::move(client_verifier));
-    } catch(openssl::openssl_error& err) {
-        logger->error("Could not load public key for client {} from file {}. OpenSSL error: {}", client_id, key_file_path, err.what());
+     } catch(const std::exception& err) { 
+        logger->error("Could not load public key for client {} from file {}: {}", client_id, key_file_path, err.what());
         return false;
     }
     return true;
