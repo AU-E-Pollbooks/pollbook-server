@@ -5,6 +5,8 @@
 #include "epollbook/faulty_clients.hpp"
 #include "epollbook/warning_query_server.hpp"
 
+#include <asio/buffers_iterator.hpp>
+
 #include <shared_mutex>
 #include <fstream>
 #include <asio.hpp>
@@ -195,7 +197,10 @@ void CheckinService::start_size_read(asio::ip::tcp::endpoint client_ip) {
         [this, client_ip, message_size, msg_size_str, msg](const asio::error_code& error, std::size_t bytes_read) {
             if (!error) {
                 // Successfully read the message size.
-                *msg_size_str = std::string(asio::buffer_cast<const char*>(this->client_buffers[client_ip]->data()), bytes_read);
+                auto data_seq = this->client_buffers[client_ip]->data();
+                *msg_size_str = std::string(
+                           asio::buffers_begin(data_seq),
+                           asio::buffers_begin(data_seq) + bytes_read);
                 *message_size = std::stoul(*msg_size_str);
                 logger->debug("Client at {}: Message size is {} bytes", client_ip, *message_size);
 
@@ -429,7 +434,10 @@ void CheckinService::start_payload_read(asio::ip::tcp::endpoint client_ip, std::
                 if (!error) {
                     // Successfully read the payload.
                     if (size_of_message == bytes_read - 1) {
-                        *msg = std::string(asio::buffer_cast<const char*>(this->client_buffers[client_ip]->data()), bytes_read);
+                        auto data_seq = this->client_buffers[client_ip]->data();
+                        *msg = std::string(
+                                   asio::buffers_begin(data_seq),
+                                   asio::buffers_begin(data_seq) + bytes_read);
                         std::string msg_string = *msg;
 
                         // Consume the bytes that were read.
