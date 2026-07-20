@@ -6,6 +6,7 @@
 #include "epollbook/trusted_client_request.hpp"
 
 #include <asio.hpp>
+#include <asio/buffers_iterator.hpp>
 #include <asio/ssl.hpp>
 
 #include <chrono>
@@ -211,7 +212,10 @@ void PollbookClient::start_message_read(bool on_id_server) {
         [this, msg, buf, message_size](const asio::error_code& error, std::size_t bytes_read) {
             if (!error) {
                 logger->debug("Read {} bytes from socket into a std::size_t", bytes_read);
-                *msg = std::string(asio::buffer_cast<const char*>(buf->data()), bytes_read);
+                auto data_seq = buf->data();
+                *msg = std::string(
+                               asio::buffers_begin(data_seq),
+                               asio::buffers_begin(data_seq) + bytes_read);
                 std::string json_string = *msg;
                 nlohmann::json response_json = nlohmann::json::parse(json_string);
                 VerifiedVoterID response = VerifiedVoterID::FromJson(response_json);
@@ -232,7 +236,10 @@ void PollbookClient::start_message_read(bool on_id_server) {
         [this, buf, message_size](const asio::error_code& error, std::size_t bytes_read) {
             if (!error) {
                 logger->debug("Read {} bytes from socket into a std::size_t", bytes_read);
-                std::string full_buffer = std::string(asio::buffer_cast<const char*>(buf->data()), bytes_read);
+                auto data = buf->data();
+                std::string full_buffer = std::string(
+                               asio::buffers_begin(data),
+                               asio::buffers_begin(data) + bytes_read);
                 std::stringstream ss(full_buffer);
                 ss >> *message_size;
                 buf->consume(bytes_read);
@@ -310,7 +317,8 @@ void PollbookClient::start_checkin_response_read(std::size_t message_size, std::
     asio::async_read_until(checkin_server_socket, *buf, "\n",
             [this, buf](const asio::error_code& error, std::size_t bytes_read) {
                 if (!error) {
-                    std::string full_buffer = std::string(asio::buffer_cast<const char*>(buf->data()), bytes_read);
+                    auto data_seq = buf->data();
+                    std::string full_buffer = std::string(asio::buffers_begin(data_seq), asio::buffers_begin(data_seq) + bytes_read);
 
                     buf->consume(bytes_read);
                     nlohmann::json response_json = nlohmann::json::parse(full_buffer);
@@ -426,7 +434,10 @@ void PollbookClient::start_verify_ticket_response_read() {
     asio::async_read_until(checkin_server_socket, *buf, "\n",
         [this, buf](const asio::error_code& error, std::size_t bytes_read) {
             if (!error) {
-                std::string response_str(asio::buffer_cast<const char*>(buf->data()), bytes_read);
+                auto data = buf->data();
+                std::string response_str(
+                           asio::buffers_begin(data),
+                           asio::buffers_begin(data) + bytes_read);
                 buf->consume(bytes_read);
                 
                 try {

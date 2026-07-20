@@ -142,7 +142,11 @@ void VoterIDService::start_size_read(asio::ip::tcp::endpoint client_ip) {
     asio::async_read_until(*(client_ssl_streams.at(client_ip)), *client_buffers[client_ip], "\n",
     [this, client_ip, message_size, msg_size_str](const asio::error_code& error, std::size_t bytes_read) {
         if(!error) {
-            *msg_size_str = std::string(asio::buffer_cast<const char*>(this->client_buffers[client_ip]->data()), bytes_read);
+            // TODO add error checking here for stoul
+            auto data_seq = this->client_buffers[client_ip]->data();
+            *msg_size_str = std::string(
+                       asio::buffers_begin(data_seq),
+                       asio::buffers_begin(data_seq) + bytes_read);
             *message_size = std::stoul(*msg_size_str);
             logger->debug("Client at {}: Message size is {} bytes", client_ip, *message_size);
             client_buffers[client_ip]->consume(bytes_read);
@@ -163,7 +167,10 @@ void VoterIDService::start_payload_read(asio::ip::tcp::endpoint client_ip, std::
     [this, msg, client_ip, size_of_message](const asio::error_code& error, std::size_t bytes_read) {
         if(!error) {
             if(size_of_message == bytes_read - 1) {
-                *msg = std::string(asio::buffer_cast<const char*>(this->client_buffers[client_ip]->data()), bytes_read);
+                auto data_seq = this->client_buffers[client_ip]->data();
+                *msg = std::string(
+                           asio::buffers_begin(data_seq),
+                           asio::buffers_begin(data_seq) + bytes_read);
                 std::string json_string = *msg;
                 client_buffers[client_ip]->consume(bytes_read);
                 logger->debug("Finished reading message of size {} from client at {}", bytes_read, client_ip);
