@@ -24,7 +24,7 @@ target_compile_features(warning_cache_client PUBLIC cxx_std_17)
 add_executable(id_server id_server.cpp)
 target_link_libraries(id_server epollbook nlohmann_json::nlohmann_json)
 target_compile_features(id_server PUBLIC cxx_std_17)
-file(GLOB PY_FILES "${CMAKE_CURRENT_SOURCE_DIR}/*.py")
+file(GLOB PY_FILES "${CMAKE_SOURCE_DIR}/tests/clients/*.py")
 
 add_custom_target(copy_python_files ALL
     COMMAND ${CMAKE_COMMAND} -E copy ${PY_FILES} ${CMAKE_CURRENT_BINARY_DIR}

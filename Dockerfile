@@ -47,6 +47,7 @@ COPY cmake/ cmake/
 COPY src/ src/
 COPY include/ include/
 COPY apps/ apps/
+COPY tests/ tests/
 
 # Set up the build directory and do an initial compile
 RUN mkdir build && cd build && cmake .. && cmake --build .

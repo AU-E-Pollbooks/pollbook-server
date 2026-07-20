@@ -376,7 +376,7 @@
         trap 'kill -TERM 0' TERM
 
         PYTHONUNBUFFERED=1 stdbuf -oL -eL \
-        python3 -u {{ playbook_dir }}/../stress_test.py \
+        python3 -u {{ playbook_dir }}/../tests/stress_test.py \
           --compose-dir {{ playbook_dir }}/.. \
           --compose-cmd "docker compose -f {{ playbook_dir }}/../compose.yaml" \
           --log-dir "{{ playbook_dir }}/logs" \
