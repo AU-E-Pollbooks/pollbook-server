@@ -35,5 +35,5 @@ def generate_fake_data(num_rows, output_file):
             uid += random.choice([1, random.randint(2, 500)])
 
 if __name__ == "__main__":
-    generate_fake_data(100, "voters.csv")
+    generate_fake_data(2000, "data/voters.csv")
 

@@ -27,12 +27,12 @@
 
 - name: Copy voters.csv
   ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../voters.csv"
+    src: "{{ playbook_dir }}/../data/voters.csv"
     dest: "{{ apps_base }}/client{{ client.id }}/voters.csv"
     mode: "0644"
 
 - name: Copy pins.csv
   ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../pins.csv"
+    src: "{{ playbook_dir }}/../data/pins.csv"
     dest: "{{ apps_base }}/client{{ client.id }}/pins.csv"
     mode: "0644"
