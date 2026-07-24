@@ -39,7 +39,7 @@ FROM base AS dev
 COPY --from=json-build /usr/local/ /usr/local/
 
 # Copy the source code to the container
-COPY requirements.txt requirements.txt
+COPY tests/requirements-container.txt requirements.txt
 RUN pip3 install --no-cache-dir --break-system-packages -r /epollbook/requirements.txt
 
 COPY CMakeLists.txt ./

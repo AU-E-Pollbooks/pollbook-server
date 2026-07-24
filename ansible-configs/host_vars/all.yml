@@ -5,11 +5,30 @@ sc:
     gateway: "172.16.0.1"
     checkin_host: 172.16.0.5
     id_host: 172.16.0.6
-    checkin_port: 6080
+    checkin_port: 6000
     id_port: 6666
+  timing:
+    request_freshness_interval: 120
+    timeout_interval: 60
+  paths:
+    ca_cert: "ca/ca_cert.pem"
+    checkin:
+      private_key: "private_key.pem"
+      pubkey: "checkin_pubkey.pem"
+      cert: "checkin_certificate.pem"
+      client_keys_folder: "client_pubkeys/"
+      client_key_file_prefix: "pubkey_"
+    id_server:
+      private_key: "private_key.pem"
+      pubkey: "id_pubkey.pem"
+      cert: "id_certificate.pem"
+    clients:
+      private_name: "private_key.pem"
+      cert_name: "certificate.pem"
   services:
     checkin:
       container: "checkin"
+      voter_list_file: "voters.csv"
       workdir: "/epollbook/build/apps/docker-test-deployment/checkin_server"
       ip: "172.16.0.5"
       build: "."

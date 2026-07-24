@@ -7,11 +7,11 @@ id_service_port = {{ sc.network.id_port }}
 log_level = {{ sc.log_level }}
 
 [Security]
-private_key = {{ sc.paths.clients.base }}/{{ item.name }}/{{ sc.paths.clients.private_name }}
+private_key = {{ sc.paths.clients.private_name }}
 id_service_public_key = {{ sc.paths.id_server.pubkey }}
 checkin_service_public_key = {{ sc.paths.checkin.pubkey }}
 checkin_service_cert = {{ sc.paths.checkin.cert }}
 id_service_cert = {{ sc.paths.id_server.cert }}
-local_cert = {{ sc.paths.clients.base }}/{{ item.name }}/{{ sc.paths.clients.cert_name }}
+local_cert = {{ sc.paths.clients.cert_name }}
 ca_cert = {{ sc.paths.ca_cert }}
 
