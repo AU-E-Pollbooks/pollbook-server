@@ -250,15 +250,55 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
     uint32_t client_id = client_id_map[client_ip];
     if (request.body.client_id != client_id) {
         logger->warn("Client ID in the message and the client ID in the public key do not match!");
-        FaultTracker::getInstance().reportFault(client_id, "Client ID in the message and the client ID in the public do not match!");
+        FaultTracker::getInstance().reportFault(client_id, "Client ID in the message does not match the client ID from the client's certificate!");
+        return;
     }
     auto t_it = client_tickets_map.find(request.body.ticket);
     if (t_it == client_tickets_map.end()) {
         logger->warn("Client ticket in the message and the client ticket in the server do not match!");
-        FaultTracker::getInstance().reportFault(client_id, "Client ID in the message and the client ID in the public do not match!");
+        FaultTracker::getInstance().reportFault(client_id, "Ticket in the message was not found on the server");
         return;
     }
     const uint32_t voter_id = t_it->second.first;
+
+    if(client_verifiers.find(request.body.client_id) == client_verifiers.end()) {
+        if(!load_client_public_key(request.body.client_id)) {
+            logger->warn("Could not load the public key for client number {}. Ignoring a voter ID validation request.", request.body.client_id);
+            FaultTracker::getInstance().reportFault(client_id, "Could not load the public key for client. Ignoring a voter ID validation request.");
+            return;
+        }
+    }
+    // Verify the client's signature on the message
+    std::string request_body_str = TicketRequest::Body::ToJson(request.body).dump();
+
+    openssl::Verifier& verifier = client_verifiers.at(request.body.client_id);
+    verifier.init();
+    verifier.add_bytes(request_body_str.data(), request_body_str.size());
+
+
+    // Verify the signature before touching the timer entry: a request with a bad
+    // signature must not consume the voter's one-shot timer slot.
+    if(!verifier.finalize(request.signature)) {
+        logger->warn("Rejecting client {}'s request because the client's signature on the message was invalid",
+                    request.body.client_id);
+        FaultTracker::getInstance().reportFault(client_id, "Invalid client signature on ticket request");
+        return;
+    }
+
+    // The signed timestamp must be recent, same rule as check-in requests
+    uint64_t current_timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                     std::chrono::system_clock::now().time_since_epoch())
+                                     .count();
+    int64_t ticket_time_difference = current_timestamp > request.body.timestamp
+                                         ? current_timestamp - request.body.timestamp
+                                         : request.body.timestamp - current_timestamp;
+    if(std::abs(ticket_time_difference) > Config::getUInt32(Config::SECTION_SECURITY, Config::REQUEST_FRESHNESS_INTERVAL)) {
+        logger->warn("Rejecting client {}'s ticket request because its timestamp, {}, was older than {} ms",
+                     request.body.client_id, request.body.timestamp,
+                     Config::getUInt32(Config::SECTION_SECURITY, Config::REQUEST_FRESHNESS_INTERVAL));
+        FaultTracker::getInstance().reportFault(client_id, "Ticket request timestamp outside freshness interval");
+        return;
+    }
 
     std::stringstream ss;
     std::string pin_str;
@@ -295,21 +335,6 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
         }
         return;
     }
-    if(client_verifiers.find(request.body.client_id) == client_verifiers.end()) {
-        if(!load_client_public_key(request.body.client_id)) {
-            logger->warn("Could not load the public key for client number {}. Ignoring a voter ID validation request.", request.body.client_id);
-            FaultTracker::getInstance().reportFault(client_id, "Could not load the public key for client. Ignoring a voter ID validation request.");
-            return;
-        }
-    }
-    // Verify the client's signature on the message
-    std::string request_body_str = TicketRequest::Body::ToJson(request.body).dump();
-
-    openssl::Verifier& verifier = client_verifiers.at(request.body.client_id);
-    verifier.init();
-    verifier.add_bytes(request_body_str.data(), request_body_str.size());
-    
-
     std::shared_ptr<Timer> timer;
     bool timer_valid = false;
     {
@@ -339,12 +364,6 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
             logger->warn("No timer found for voter ID {}", voter_id);
             FaultTracker::getInstance().reportFault(client_id, "No timer found for voter ID");
         }
-    }
-
-    if(!verifier.finalize(request.signature)) {
-        logger->debug("Rejecting client {}'s request because the client's signature on the message was invalid",
-                    request.body.client_id);
-        return;
     }
 
     if (client_tickets_map.find(request.body.ticket) != client_tickets_map.end() && timer_valid) {
