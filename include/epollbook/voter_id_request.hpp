@@ -68,7 +68,7 @@ struct VoterIDRequest {
     Body body;
 
     /**
-     * A signature on this message using the client's public key
+     * A signature on this message using the client's private key
      */
     std::vector<std::uint8_t> client_signature;
 
