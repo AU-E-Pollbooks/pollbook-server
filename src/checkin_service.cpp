@@ -431,8 +431,10 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
             logger->debug("Failed sending message: {}", ec);
         }
         if (!timer) {
-            logger->warn("Request was timed out");
-            FaultTracker::getInstance().reportFault(client_id, "Request was timed out");
+            logger->warn("No pending ticket for voter ID {}: already used, expired, or never issued",
+                         voter_id);
+            FaultTracker::getInstance().reportFault(
+                    client_id, "No pending ticket for voter (already used, expired, or never issued)");
         }
         logger->warn("Invalid ticket");
         FaultTracker::getInstance().reportFault(client_id, "Invalid ticket");
