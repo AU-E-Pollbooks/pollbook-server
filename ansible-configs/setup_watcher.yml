@@ -1,0 +1,208 @@
+---
+- name: Install & run code watcher + compose watch (user services, no sudo)
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    # Paths
+    repo_root: "{{ playbook_dir | dirname }}"
+    playbook_dir_abs: "{{ playbook_dir }}"
+    tools_dir: "{{ repo_root }}/tools"
+
+    # Use the invoking user's HOME (what Ansible sees in env)
+    user_home: "{{ lookup('env','HOME') | default(ansible_env.HOME, true) }}"
+    user_systemd_dir: "{{ user_home }}/.config/systemd/user"
+
+    # Services & scripts
+    watcher_service: epollbook-watcher
+    compose_watch_service: epollbook-compose-watch
+    compose_watch_enable: true
+
+    watcher_script: "{{ tools_dir }}/epollbook-watch.sh"
+    compose_watch_script: "{{ tools_dir }}/compose-watch.sh"
+
+    # Watch configuration
+    watch_paths: [src, include, apps, CMakeLists.txt]
+    debounce_seconds: 2
+
+  tasks:
+    - name: Show important derived variables
+      ansible.builtin.debug:
+        msg:
+          - "repo_root={{ repo_root }}"
+          - "tools_dir={{ tools_dir }}"
+          - "user_home={{ user_home }}"
+          - "user_systemd_dir={{ user_systemd_dir }}"
+
+    - name: Ensure ~/.config exists
+      ansible.builtin.file:
+        path: "{{ user_home }}/.config"
+        state: directory
+        mode: "0755"
+
+    - name: Ensure user systemd dir exists (~/.config/systemd/user)
+      ansible.builtin.file:
+        path: "{{ user_systemd_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Ensure tools dir exists
+      ansible.builtin.file:
+        path: "{{ tools_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Sanity check -> ansible-playbook in PATH (for watcher script)
+      ansible.builtin.command: bash -lc "command -v ansible-playbook"
+      register: _apb
+      changed_when: false
+      failed_when: _apb.rc != 0
+
+    - name: Friendly warning if inotify-tools not installed (script also checks)
+      ansible.builtin.command: bash -lc "command -v inotifywait"
+      register: _ino
+      changed_when: false
+      failed_when: false
+
+    - name: Note about inotify-tools
+      ansible.builtin.debug:
+        msg: "TIP: 'inotifywait' not found; install inotify-tools for the watcher to run."
+      when: _ino.rc != 0
+
+    - name: Install watcher script (code change → rebuild_restart.yml)
+      ansible.builtin.copy:
+        dest: "{{ watcher_script }}"
+        mode: "0755"
+        content: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          ROOT="{{ repo_root }}"
+          PLAYBOOK_DIR="{{ playbook_dir_abs }}"
+          DEBOUNCE="{{ debounce_seconds }}"
+          LOCK_FILE="$ROOT/.watcher.lock"
+          PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:$PATH"
+
+          cd "$ROOT" || exit 1
+          echo "[watch] starting in $ROOT (debounce=${DEBOUNCE}s)"
+          command -v inotifywait >/dev/null || { echo "[watch] inotifywait not found"; exit 1; }
+          command -v ansible-playbook >/dev/null || { echo "[watch] ansible-playbook not found"; exit 1; }
+
+          # Expand to a bash array
+          WATCH_PATHS=({{ watch_paths | join(' ') }})
+
+          run_cycle() {
+            exec {lfd}>"$LOCK_FILE" || true
+            if ! flock -n "$lfd"; then
+              echo "[watch] run already in progress; skipping"
+              return 0
+            fi
+            echo "[watch] code change detected -> rebuild+restart"
+            if ! ansible-playbook "$PLAYBOOK_DIR/rebuild_restart.yml"; then
+              echo "[watch] rebuild_restart.yml failed"
+            fi
+          }
+
+          inotifywait -m -r -e modify,close_write,move,create,delete \
+            --exclude '(\.git/|/build/|/output/|/\.cmake/)' \
+            "${WATCH_PATHS[@]}" | while read -r _; do
+              sleep "$DEBOUNCE"; run_cycle
+            done
+
+    - name: Write user service for code watcher
+      ansible.builtin.copy:
+        dest: "{{ user_systemd_dir }}/{{ watcher_service }}.service"
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=E-Pollbook code watcher (user)
+          After=default.target
+
+          [Service]
+          Type=simple
+          Environment=PATH=%h/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/bin
+          WorkingDirectory={{ repo_root }}
+          ExecStart=/bin/bash -lc '{{ watcher_script }}'
+          Restart=always
+          RestartSec=2
+
+          [Install]
+          WantedBy=default.target
+
+    - name: Install compose-watch script (sync host → containers)
+      when: compose_watch_enable
+      ansible.builtin.copy:
+        dest: "{{ compose_watch_script }}"
+        mode: "0755"
+        content: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          cd "{{ repo_root }}"
+          if docker compose watch --help >/dev/null 2>&1; then
+            exec docker compose watch
+          else
+            exec docker compose up -w
+          fi
+
+    - name: Write user service for compose watch
+      when: compose_watch_enable
+      ansible.builtin.copy:
+        dest: "{{ user_systemd_dir }}/{{ compose_watch_service }}.service"
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Compose watch for E-Pollbook (sync host -> containers)
+          After=default.target
+
+          [Service]
+          Type=simple
+          WorkingDirectory={{ repo_root }}
+          ExecStart={{ compose_watch_script }}
+          Restart=always
+          RestartSec=2
+
+          [Install]
+          WantedBy=default.target
+
+    # Reload + enable/start (user scope)
+    - name: Reload user systemd
+      ansible.builtin.command: systemctl --user daemon-reload
+      changed_when: false
+      failed_when: false
+
+    - name: Enable + start code watcher
+      ansible.builtin.command: systemctl --user enable --now {{ watcher_service }}
+      changed_when: false
+      failed_when: false
+
+    - name: Enable + start compose watch
+      when: compose_watch_enable
+      ansible.builtin.command: systemctl --user enable --now {{ compose_watch_service }}
+      changed_when: false
+      failed_when: false
+
+    # Status
+    - name: Show watcher status
+      ansible.builtin.command: systemctl --user --no-pager --full status {{ watcher_service }}
+      register: watcher_status
+      changed_when: false
+      failed_when: false
+
+    - name: Show compose-watch status
+      when: compose_watch_enable
+      ansible.builtin.command: systemctl --user --no-pager --full status {{ compose_watch_service }}
+      register: compose_status
+      changed_when: false
+      failed_when: false
+
+    - name: Print statuses
+      ansible.builtin.debug:
+        msg: |
+          {{ watcher_status.stdout }}
+          {% if compose_watch_enable and compose_status is defined %}{{ compose_status.stdout }}{% endif %}
+
+    # Optional: lingering helps user services survive logouts; often needs root.
+    - name: Try to enable lingering for current user (best-effort)
+      ansible.builtin.command: "loginctl enable-linger {{ lookup('env','USER') | default('') }}"
+      changed_when: false
+      failed_when: false
+

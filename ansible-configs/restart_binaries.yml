@@ -1,0 +1,55 @@
+---
+- name: Restart all E-Pollbook processes to pick up new configs
+  hosts: localhost
+  gather_facts: false
+
+  pre_tasks:
+    - name: Load vars
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/host_vars/all.yml"
+        name: sc
+
+  tasks:
+    # ---------- Check-in server ----------
+    - name: Stop checkin server (best-effort)
+      ansible.builtin.shell: >
+        docker exec {{ sc.services.checkin.container }} bash -lc
+        "pgrep -f '^(.*/)?server$' >/dev/null && pkill -f '^(.*/)?server$' || true"
+      failed_when: false
+      changed_when: false
+
+    - name: Start checkin server
+      ansible.builtin.shell: >
+        docker exec -d -w {{ sc.services.checkin.workdir }}
+        {{ sc.services.checkin.container }} ../../server
+
+    # ---------- ID server ----------
+    - name: Stop id_server (best-effort)
+      ansible.builtin.shell: >
+        docker exec {{ sc.services.id_server.container }} bash -lc
+        "pgrep -f '^(.*/)?id_server$' >/dev/null && pkill -f '^(.*/)?id_server$' || true"
+      failed_when: false
+      changed_when: false
+
+    - name: Start id_server
+      ansible.builtin.shell: >
+        docker exec -d -w {{ sc.services.id_server.workdir }}
+        {{ sc.services.id_server.container }} ../../id_server
+
+    # ---------- Clients ----------
+    - name: Stop client processes (best-effort)
+      ansible.builtin.shell: >
+        docker exec {{ item.container }} bash -lc
+        "pgrep -f '^(.*/)?{{ 'secure_client' if 'trusted' in item.container else 'client' }}$' >/dev/null
+         && pkill -f '^(.*/)?{{ 'secure_client' if 'trusted' in item.container else 'client' }}$' || true"
+      loop: "{{ sc.clients }}"
+      loop_control: { label: "{{ item.name }}" }
+      failed_when: false
+      changed_when: false
+
+    - name: Start client processes
+      ansible.builtin.shell: >
+        docker exec -d -w {{ item.workdir }} {{ item.container }}
+        {{ '../../secure_client' if 'trusted' in item.container else '../../client' }}
+      loop: "{{ sc.clients }}"
+      loop_control: { label: "{{ item.name }}" }

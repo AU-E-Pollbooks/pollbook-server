@@ -1,0 +1,56 @@
+---
+# Inventory for the physical Raspberry Pi deployment.
+#
+# Addresses and accounts below are placeholders describing the topology used for
+# the paper's hardware measurements: two servers and two clients on one LAN, one
+# client trusted and one untrusted. Replace ansible_host with your own devices'
+# addresses and ansible_user with an account that can write pollbook_install_dir.
+all:
+  children:
+    pollbook_devices:
+      children:
+        checkin_servers:
+          hosts:
+            checkin:
+              ansible_host: 192.168.0.21
+              ansible_user: pollbook
+              pollbook_install_dir: /home/pollbook/pollbook
+              pollbook_owner: pollbook
+              pollbook_group: pollbook
+              ansible_become: false
+              certificate_sans:
+                - DNS:checkin
+                - IP:192.168.0.21
+        id_servers:
+          hosts:
+            voter-id:
+              ansible_host: 192.168.0.22
+              ansible_user: pollbook
+              pollbook_install_dir: /home/pollbook/pollbook
+              pollbook_owner: pollbook
+              pollbook_group: pollbook
+              ansible_become: false
+              certificate_sans:
+                - DNS:voter-id
+                - IP:192.168.0.22
+        pollbook_clients:
+          hosts:
+            client-0:
+              ansible_host: 192.168.0.159
+              ansible_user: pollbook
+              client_id: 0
+              pollbook_install_dir: /home/pollbook/pollbook
+              pollbook_owner: pollbook
+              pollbook_group: pollbook
+              ansible_become: false
+            client-1:
+              ansible_host: 192.168.0.161
+              ansible_user: pollbook
+              client_id: 1
+              pollbook_install_dir: /home/pollbook/pollbook
+              pollbook_owner: pollbook
+              pollbook_group: pollbook
+              ansible_become: false
+      vars:
+        # Change this if the remote account differs across the deployment.
+        ansible_user: pollbook

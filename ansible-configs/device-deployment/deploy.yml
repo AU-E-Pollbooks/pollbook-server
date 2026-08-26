@@ -1,0 +1,396 @@
+---
+- name: Validate the complete physical-device deployment bundle
+  hosts: localhost
+  gather_facts: false
+  tags:
+    - preflight
+
+  vars:
+    local_secrets_dir: "{{ playbook_dir }}/secrets"
+    shared_pki_files:
+      - ca_cert.pem
+      - checkin_certificate.pem
+      - checkin_pubkey.pem
+      - id_certificate.pem
+      - id_pubkey.pem
+    deployment_client_ids: >-
+      {{ groups['pollbook_clients']
+         | map('extract', hostvars, 'client_id')
+         | map('int')
+         | list }}
+    deployment_client_key_file_prefix: >-
+      {{ hostvars[groups['pollbook_devices'][0]].client_key_file_prefix }}
+    deployment_trusted_client_ids: >-
+      {{ hostvars[groups['pollbook_devices'][0]].trusted_client_ids | default([]) }}
+    required_shared_files: >-
+      {{ (shared_pki_files
+          | map('regex_replace', '^', local_secrets_dir ~ '/shared/')
+          | list)
+         + (deployment_client_ids
+            | map('string')
+            | map('regex_replace', '^', local_secrets_dir ~ '/shared/client_pubkeys/' ~ deployment_client_key_file_prefix)
+            | map('regex_replace', '$', '.pem')
+            | list) }}
+    required_device_files: >-
+      {{ groups['pollbook_devices']
+         | product(['private_key.pem', 'certificate.pem'])
+         | map('join', '/')
+         | map('regex_replace', '^', local_secrets_dir ~ '/devices/')
+         | list }}
+
+  tasks:
+    - name: Validate the inventory topology
+      ansible.builtin.assert:
+        that:
+          - groups['checkin_servers'] | length == 1
+          - groups['id_servers'] | length == 1
+          - groups['pollbook_clients'] | length > 0
+          - groups['pollbook_devices'] | length == ((groups['checkin_servers'] | length) + (groups['id_servers'] | length) + (groups['pollbook_clients'] | length))
+        fail_msg: >-
+          pollbook_devices must contain exactly one check-in server, exactly one
+          ID server, and at least one client, with no host in multiple roles.
+
+    - name: Validate every client ID
+      ansible.builtin.assert:
+        that:
+          - hostvars[item].client_id is defined
+          - (hostvars[item].client_id | string) is match('^[0-9]+$')
+          - (hostvars[item].client_id | int) >= 0
+        fail_msg: "{{ item }} needs a non-negative numeric client_id."
+      loop: "{{ groups['pollbook_clients'] }}"
+
+    - name: Validate client IDs and trusted-client selection
+      ansible.builtin.assert:
+        that:
+          - deployment_client_ids | unique | length == deployment_client_ids | length
+          - deployment_trusted_client_ids | map('int') | difference(deployment_client_ids) | length == 0
+        fail_msg: >-
+          Client IDs must be unique, and trusted_client_ids may contain only IDs
+          assigned to hosts in the pollbook_clients group.
+
+    - name: Check controller-side deployment files
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      register: required_local_files
+      loop: "{{ required_shared_files + required_device_files }}"
+
+    - name: Refuse an incomplete deployment bundle
+      ansible.builtin.assert:
+        that:
+          - required_local_files.results | map(attribute='stat.exists') | min
+          - >-
+            (required_local_files.results
+              | selectattr('stat.isreg', 'defined')
+              | selectattr('stat.isreg')
+              | list
+              | length)
+            == (required_local_files.results | length)
+        fail_msg: >-
+          Required PKI files are missing or are not regular files. Run
+          generate_device_pki.sh and resolve every reported error before deployment.
+
+    - name: Verify server certificates use the deployment CA
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - verify
+          - -purpose
+          - sslserver
+          - -CAfile
+          - "{{ local_secrets_dir }}/shared/ca_cert.pem"
+          - "{{ local_secrets_dir }}/shared/{{ item }}"
+      loop:
+        - checkin_certificate.pem
+        - id_certificate.pem
+      changed_when: false
+      check_mode: false
+
+    - name: Verify client certificates use the deployment CA
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - verify
+          - -purpose
+          - sslclient
+          - -CAfile
+          - "{{ local_secrets_dir }}/shared/ca_cert.pem"
+          - "{{ local_secrets_dir }}/devices/{{ item }}/certificate.pem"
+      loop: "{{ groups['pollbook_clients'] }}"
+      changed_when: false
+      check_mode: false
+
+    - name: Verify device-side server certificates use the deployment CA
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - verify
+          - -purpose
+          - sslserver
+          - -CAfile
+          - "{{ local_secrets_dir }}/shared/ca_cert.pem"
+          - "{{ local_secrets_dir }}/devices/{{ item }}/certificate.pem"
+      loop: "{{ groups['checkin_servers'] + groups['id_servers'] }}"
+      changed_when: false
+      check_mode: false
+
+    - name: Read public keys from every device private key
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - pkey
+          - -in
+          - "{{ local_secrets_dir }}/devices/{{ item }}/private_key.pem"
+          - -pubout
+      loop: "{{ groups['pollbook_devices'] }}"
+      register: device_private_key_public_parts
+      changed_when: false
+      check_mode: false
+      no_log: true
+
+    - name: Read public keys from every device certificate
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - x509
+          - -in
+          - "{{ local_secrets_dir }}/devices/{{ item }}/certificate.pem"
+          - -pubkey
+          - -noout
+      loop: "{{ groups['pollbook_devices'] }}"
+      register: device_certificate_public_parts
+      changed_when: false
+      check_mode: false
+
+    - name: Refuse device certificates that do not match their private keys
+      ansible.builtin.assert:
+        that:
+          - device_private_key_public_parts.results[item].stdout == device_certificate_public_parts.results[item].stdout
+        fail_msg: >-
+          The certificate and private key for
+          {{ groups['pollbook_devices'][item] }} do not match.
+      loop: "{{ range(0, groups['pollbook_devices'] | length) | list }}"
+      no_log: true
+
+    - name: Read client certificate subjects
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - x509
+          - -in
+          - "{{ local_secrets_dir }}/devices/{{ item }}/certificate.pem"
+          - -subject
+          - -noout
+          - -nameopt
+          - RFC2253
+      loop: "{{ groups['pollbook_clients'] }}"
+      register: client_certificate_subjects
+      changed_when: false
+      check_mode: false
+
+    - name: Refuse client certificates with the wrong identity
+      ansible.builtin.assert:
+        that:
+          - >-
+            client_certificate_subjects.results[item].stdout
+            is search('(^|,)CN=Client '
+              ~ (hostvars[groups['pollbook_clients'][item]].client_id | string)
+              ~ '(,|$)')
+        fail_msg: >-
+          The certificate for {{ groups['pollbook_clients'][item] }} must use
+          the exact common name "Client
+          {{ hostvars[groups['pollbook_clients'][item]].client_id }}".
+      loop: "{{ range(0, groups['pollbook_clients'] | length) | list }}"
+
+    - name: Read public keys from server certificates and exported key files
+      ansible.builtin.command:
+        argv: "{{ item.command }}"
+      loop:
+        - name: check-in certificate
+          command: [openssl, x509, -in, "{{ local_secrets_dir }}/shared/checkin_certificate.pem", -pubkey, -noout]
+        - name: check-in exported key
+          command: [openssl, pkey, -pubin, -in, "{{ local_secrets_dir }}/shared/checkin_pubkey.pem", -pubout]
+        - name: ID certificate
+          command: [openssl, x509, -in, "{{ local_secrets_dir }}/shared/id_certificate.pem", -pubkey, -noout]
+        - name: ID exported key
+          command: [openssl, pkey, -pubin, -in, "{{ local_secrets_dir }}/shared/id_pubkey.pem", -pubout]
+      loop_control:
+        label: "{{ item.name }}"
+      register: server_public_key_details
+      changed_when: false
+      check_mode: false
+
+    - name: Refuse mismatched server certificates and exported public keys
+      ansible.builtin.assert:
+        that:
+          - server_public_key_details.results[0].stdout == server_public_key_details.results[1].stdout
+          - server_public_key_details.results[2].stdout == server_public_key_details.results[3].stdout
+          - >-
+            server_public_key_details.results[0].stdout
+            == device_private_key_public_parts.results[
+                 groups['pollbook_devices'].index(groups['checkin_servers'][0])
+               ].stdout
+          - >-
+            server_public_key_details.results[2].stdout
+            == device_private_key_public_parts.results[
+                 groups['pollbook_devices'].index(groups['id_servers'][0])
+               ].stdout
+        fail_msg: >-
+          Each server public-key file must match the public key in that server's
+          certificate and its inventory host's private key.
+
+- name: Install role-specific pollbook configuration and PKI
+  hosts: pollbook_devices
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+  tags:
+    - deploy
+
+  vars:
+    local_secrets_dir: "{{ playbook_dir }}/secrets"
+    shared_pki_files:
+      - ca_cert.pem
+      - checkin_certificate.pem
+      - checkin_pubkey.pem
+      - id_certificate.pem
+      - id_pubkey.pem
+    deployment_client_ids: >-
+      {{ groups['pollbook_clients']
+         | map('extract', hostvars, 'client_id')
+         | map('int')
+         | list }}
+
+  tasks:
+    - name: Create application directory
+      ansible.builtin.file:
+        path: "{{ pollbook_install_dir }}"
+        state: directory
+        owner: "{{ pollbook_owner }}"
+        group: "{{ pollbook_group }}"
+        mode: "0750"
+
+    - name: Create protected PKI directory
+      ansible.builtin.file:
+        path: "{{ pollbook_install_dir }}/pki"
+        state: directory
+        owner: "{{ pollbook_owner }}"
+        group: "{{ pollbook_group }}"
+        mode: "0700"
+
+    - name: Install this device's private key
+      ansible.builtin.copy:
+        src: "{{ local_secrets_dir }}/devices/{{ inventory_hostname }}/private_key.pem"
+        dest: "{{ pollbook_install_dir }}/pki/private_key.pem"
+        owner: "{{ pollbook_owner }}"
+        group: "{{ pollbook_group }}"
+        mode: "0600"
+        backup: true
+      no_log: true
+
+    - name: Install this device's certificate
+      ansible.builtin.copy:
+        src: "{{ local_secrets_dir }}/devices/{{ inventory_hostname }}/certificate.pem"
+        dest: "{{ pollbook_install_dir }}/pki/certificate.pem"
+        owner: "{{ pollbook_owner }}"
+        group: "{{ pollbook_group }}"
+        mode: "0644"
+        backup: true
+
+    - name: Install shared public PKI material
+      ansible.builtin.copy:
+        src: "{{ local_secrets_dir }}/shared/{{ item }}"
+        dest: "{{ pollbook_install_dir }}/pki/{{ item }}"
+        owner: "{{ pollbook_owner }}"
+        group: "{{ pollbook_group }}"
+        mode: "0644"
+        backup: true
+      loop: "{{ shared_pki_files }}"
+
+    - name: Create server client-key directory
+      ansible.builtin.file:
+        path: "{{ pollbook_install_dir }}/pki/client_pubkeys"
+        state: directory
+        owner: "{{ pollbook_owner }}"
+        group: "{{ pollbook_group }}"
+        mode: "0750"
+      when: inventory_hostname in (groups['checkin_servers'] + groups['id_servers'])
+
+    - name: Install client public-key registry on servers
+      ansible.builtin.copy:
+        src: "{{ local_secrets_dir }}/shared/client_pubkeys/{{ client_key_file_prefix }}{{ item }}.pem"
+        dest: "{{ pollbook_install_dir }}/pki/client_pubkeys/{{ client_key_file_prefix }}{{ item }}.pem"
+        owner: "{{ pollbook_owner }}"
+        group: "{{ pollbook_group }}"
+        mode: "0644"
+        backup: true
+      loop: "{{ deployment_client_ids }}"
+      when: inventory_hostname in (groups['checkin_servers'] + groups['id_servers'])
+
+    - name: Create server data directory
+      ansible.builtin.file:
+        path: "{{ pollbook_install_dir }}/data"
+        state: directory
+        owner: "{{ pollbook_owner }}"
+        group: "{{ pollbook_group }}"
+        mode: "0750"
+      when: inventory_hostname in (groups['checkin_servers'] + groups['id_servers'])
+
+    - name: Install check-in voter data
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../data/voters.csv"
+        dest: "{{ pollbook_install_dir }}/data/voters.csv"
+        owner: "{{ pollbook_owner }}"
+        group: "{{ pollbook_group }}"
+        mode: "0640"
+        backup: true
+      when: inventory_hostname in groups['checkin_servers']
+
+    - name: Install trusted-client selection
+      ansible.builtin.copy:
+        content: "{{ (trusted_client_ids | default([]) | map('string') | join('\n')) ~ '\n' }}"
+        dest: "{{ pollbook_install_dir }}/data/trusted_clients.txt"
+        owner: "{{ pollbook_owner }}"
+        group: "{{ pollbook_group }}"
+        mode: "0640"
+        backup: true
+      when: inventory_hostname in groups['checkin_servers']
+
+    - name: Install ID-service voter data
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../data/id_voters.csv"
+        dest: "{{ pollbook_install_dir }}/data/voters.csv"
+        owner: "{{ pollbook_owner }}"
+        group: "{{ pollbook_group }}"
+        mode: "0640"
+        backup: true
+      when: inventory_hostname in groups['id_servers']
+
+    - name: Render check-in server configuration
+      ansible.builtin.template:
+        src: checkin_server_config.ini.j2
+        dest: "{{ pollbook_install_dir }}/config.ini"
+        owner: "{{ pollbook_owner }}"
+        group: "{{ pollbook_group }}"
+        mode: "0640"
+        backup: true
+      when: inventory_hostname in groups['checkin_servers']
+
+    - name: Render ID server configuration
+      ansible.builtin.template:
+        src: id_server_config.ini.j2
+        dest: "{{ pollbook_install_dir }}/config.ini"
+        owner: "{{ pollbook_owner }}"
+        group: "{{ pollbook_group }}"
+        mode: "0640"
+        backup: true
+      when: inventory_hostname in groups['id_servers']
+
+    - name: Render client configuration
+      ansible.builtin.template:
+        src: client_config.ini.j2
+        dest: "{{ pollbook_install_dir }}/config.ini"
+        owner: "{{ pollbook_owner }}"
+        group: "{{ pollbook_group }}"
+        mode: "0640"
+        backup: true
+      when: inventory_hostname in groups['pollbook_clients']

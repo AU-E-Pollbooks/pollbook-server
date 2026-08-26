@@ -1,0 +1,38 @@
+# client_setup.yml
+
+- name: Ensure dir client{{ client.id }} exists
+  ansible.builtin.file:
+    path: "{{ apps_base }}/client{{ client.id }}"
+    state: directory
+    mode: "0755"
+
+- name: Render testing_client_config.ini (trusted/untrusted split, force overwrite)
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/templates/testing_client_config.ini.j2"
+    dest: "{{ apps_base }}/client{{ client.id }}/testing_client_config.ini"
+    mode: "0644"
+    force: true
+  vars:
+    client_id: "{{ client.id }}"
+    # passed from include_tasks
+    is_trusted: "{{ is_trusted }}"
+    cfg_log_level: "{{ cfg_log_level }}"
+    checkin_service_port: "{{ checkin_service_port_override }}"
+    trusted_listen_port: "{{ trusted_listen_port }}"
+    # only used by untrusted; ignored by template when is_trusted == true
+    ticket_sink_ip: "{{ (not is_trusted) | ternary(trusted_ip_by_id[client.id + 1] | default('0.0.0.0'), '') }}"
+    ticket_sink_port: 9555
+    pin_csv: "pins.csv"
+    voters_csv: "voters.csv"
+
+- name: Copy voters.csv
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../data/voters.csv"
+    dest: "{{ apps_base }}/client{{ client.id }}/voters.csv"
+    mode: "0644"
+
+- name: Copy pins.csv
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../data/pins.csv"
+    dest: "{{ apps_base }}/client{{ client.id }}/pins.csv"
+    mode: "0644"

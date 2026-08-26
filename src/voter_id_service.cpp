@@ -94,8 +94,6 @@ void VoterIDService::handle_accept(const asio::error_code& error, asio::ip::tcp:
                         } else {
                             std::cerr << "Error extracting public key" << std::endl;
                         }
-                        // // Clean up
-                        // X509_free(clientCert);
                     } else {
                         std::cerr << "No certificate received from client" << std::endl;
                     }
@@ -197,14 +195,6 @@ void VoterIDService::save_pub_key(EVP_PKEY* pubkey, std::uint32_t client_id) {
     pub_key_file_path_builder << Config::getString(Config::SECTION_SECURITY, Config::CLIENT_KEYS_FOLDER)
                           << Config::getString(Config::SECTION_SECURITY, Config::CLIENT_KEY_FILE_PREFIX) << client_id << ".pem";
     std::string pkey_file_path = pub_key_file_path_builder.str();
-    // namespace fs = std::filesystem;
-    // fs::path p(pkey_file_path);
-    // std::error_code ec;
-    // fs::create_directories(p.parent_path(), ec);
-    // if (ec) {
-    //     logger->error("mkdirs {}: {}", p.parent_path().string(), ec.message());
-    //     return; 
-    // }
     FILE* pubkey_file = fopen(pkey_file_path.c_str(), "w");
     if (pubkey_file != nullptr) {
         // Write the public key in PEM format
@@ -240,7 +230,7 @@ void VoterIDService::load_voter_data_from_csv() {
         }
         
         if (fields.size() < 8) {
-            logger->warn("Invalid line format: {}", line);
+            logger->error("Invalid line format: {}", line);
             continue;
         }
         
@@ -252,7 +242,7 @@ void VoterIDService::load_voter_data_from_csv() {
             std::string fullName = fields[2] + " " + fields[3] + " " + fields[1];
             voter_id_name_map[uid] = fullName;
         } catch (const std::exception& e) {
-            logger->warn("Error processing line: {}", line);
+            logger->error("Error processing line: {}", line);
         }
     }
     

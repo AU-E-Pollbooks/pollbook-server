@@ -1,0 +1,123 @@
+---
+- name: Render and copy configs for checkin, id-server, and clients
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    out_dir: "{{ playbook_dir }}/output/active"
+
+  pre_tasks:
+    - name: Load vars
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/host_vars/all.yml"
+
+    - name: Ensure output dir exists
+      ansible.builtin.file:
+        path: "{{ out_dir }}"
+        state: directory
+        mode: "0755"
+
+  tasks:
+    # ----------------- CHECKIN -----------------
+    - name: Render checkin_server config
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/templates/checkin_server_config.ini.j2"
+        dest: "{{ out_dir }}/checkin_server_config.ini"
+        mode: "0644"
+      vars:
+        checkin_service_host: "{{ sc.network.checkin_host }}"
+        checkin_service_port: "{{ sc.network.checkin_port }}"
+        voter_list_file: "{{ sc.services.checkin.voter_list_file | default('voters.csv') }}"
+        log_level: "{{ sc.log_level }}"
+
+        private_key: "{{ sc.paths.checkin.private_key }}"
+        id_service_public_key: "{{ sc.paths.id_server.pubkey }}"
+        checkin_service_public_key: "{{ sc.paths.checkin.pubkey }}"
+        client_keys_folder: "{{ sc.paths.checkin.client_keys_folder }}"
+        client_key_file_prefix: "{{ sc.paths.checkin.client_key_file_prefix }}"
+        request_freshness_interval: "{{ sc.timing.request_freshness_interval }}"
+        checkin_service_cert: "{{ sc.paths.checkin.cert }}"
+        id_service_cert: "{{ sc.paths.id_server.cert }}"
+        local_cert: "{{ sc.paths.checkin.cert }}"
+        ca_cert: "{{ sc.paths.ca_cert }}"
+        timeout_interval: "{{ sc.timing.timeout_interval }}"
+
+    - name: Copy checkin_server config into container
+      ansible.builtin.command:
+        cmd: >
+          docker cp {{ out_dir }}/checkin_server_config.ini
+          {{ sc.services.checkin.container }}:{{ sc.services.checkin.workdir }}/config.ini
+
+    # ----------------- ID SERVER -----------------
+    - name: Render id_server config
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/templates/id_server_config.ini.j2"
+        dest: "{{ out_dir }}/id_server_config.ini"
+        mode: "0644"
+      vars:
+        id_service_host: "{{ sc.network.id_host }}"
+        id_service_port: "{{ sc.network.id_port }}"
+        voter_list_file: "{{ sc.services.id_server.voter_list_file | default('voters.csv') }}"
+        trusted_clients_file: "{{ sc.services.checkin.trusted_clients_file | default('trusted_clients.txt') }}"
+        log_level: "{{ sc.log_level }}"
+
+        private_key: "{{ sc.paths.id_server.private_key }}"
+        id_service_public_key: "{{ sc.paths.id_server.pubkey }}"
+        checkin_service_public_key: "{{ sc.paths.checkin.pubkey }}"
+        request_freshness_interval: "{{ sc.timing.request_freshness_interval }}"
+        checkin_service_cert: "{{ sc.paths.checkin.cert }}"
+        id_service_cert: "{{ sc.paths.id_server.cert }}"
+        local_cert: "{{ sc.paths.id_server.cert }}"
+        ca_cert: "{{ sc.paths.ca_cert }}"
+        timeout_interval: "{{ sc.timing.timeout_interval }}"
+
+    - name: Copy id_server config into container
+      ansible.builtin.command:
+        cmd: >
+          docker cp {{ out_dir }}/id_server_config.ini
+          {{ sc.services.id_server.container }}:{{ sc.services.id_server.workdir }}/config.ini
+
+    # ----------------- SERVER VOTER LISTS -----------------
+    # checkin gets the PIN-bearing roll (load_voter_list + load_pin_mappings
+    # both read voter_list_file); id_server gets the PIN-less roll (it parses
+    # positionally, fields[1] == Last Name).
+    - name: Stage checkin voter list on host (baked into image for compose path)
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../data/voters.csv"
+        dest: "{{ playbook_dir }}/../apps/docker-test-deployment/checkin_server/voters.csv"
+        mode: "0644"
+
+    - name: Stage id_server voter list on host (baked into image for compose path)
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../data/id_voters.csv"
+        dest: "{{ playbook_dir }}/../apps/docker-test-deployment/id_server/voters.csv"
+        mode: "0644"
+
+    - name: Copy checkin voter list into container
+      ansible.builtin.command:
+        cmd: >
+          docker cp {{ playbook_dir }}/../data/voters.csv
+          {{ sc.services.checkin.container }}:{{ sc.services.checkin.workdir }}/voters.csv
+
+    - name: Copy id_server voter list into container
+      ansible.builtin.command:
+        cmd: >
+          docker cp {{ playbook_dir }}/../data/id_voters.csv
+          {{ sc.services.id_server.container }}:{{ sc.services.id_server.workdir }}/voters.csv
+
+    # ----------------- CLIENTS (loop) -----------------
+    - name: Render client config(s)
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/templates/client_config.ini.j2"
+        dest: "{{ out_dir }}/{{ item.name }}_config.ini"
+        mode: "0644"
+      loop: "{{ sc.clients }}"
+      loop_control: { label: "{{ item.name }}" }
+
+    - name: Copy client config into container
+      ansible.builtin.command:
+        cmd: >
+          docker cp {{ out_dir }}/{{ item.name }}_config.ini
+          {{ item.container }}:{{ item.workdir }}/config.ini
+      loop: "{{ sc.clients }}"
+      loop_control: { label: "{{ item.name }}" }

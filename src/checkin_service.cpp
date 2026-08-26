@@ -241,7 +241,7 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
         FaultTracker::getInstance().reportFault(client_id, ex.what());
         return;
     } catch (const std::exception& ex) {
-        logger->warn("Unexpected error: {}", ex.what());
+        logger->error("Unexpected error: {}", ex.what());
         FaultTracker::getInstance().reportFault(client_id, ex.what());
         return;
     }
@@ -249,12 +249,17 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
     TicketRequest request = std::move(*req);
     uint32_t client_id = client_id_map[client_ip];
     if (request.body.client_id != client_id) {
-        logger->warn("Client ID in the message and the client ID in the public do not match!");
+        logger->warn("Client ID in the message and the client ID in the public key do not match!");
         FaultTracker::getInstance().reportFault(client_id, "Client ID in the message does not match the client ID from the client's certificate!");
         return;
     }
-
-    std::stringstream ss;
+    auto t_it = client_tickets_map.find(request.body.ticket);
+    if (t_it == client_tickets_map.end()) {
+        logger->warn("Client ticket in the message and the client ticket in the server do not match!");
+        FaultTracker::getInstance().reportFault(client_id, "Ticket in the message was not found on the server");
+        return;
+    }
+    const uint32_t voter_id = t_it->second.first;
 
     if(client_verifiers.find(request.body.client_id) == client_verifiers.end()) {
         if(!load_client_public_key(request.body.client_id)) {
@@ -269,7 +274,8 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
     openssl::Verifier& verifier = client_verifiers.at(request.body.client_id);
     verifier.init();
     verifier.add_bytes(request_body_str.data(), request_body_str.size());
-    // handle_verification_timeout(request.body.voter_unique_id);
+
+
     // Verify the signature before touching the timer entry: a request with a bad
     // signature must not consume the voter's one-shot timer slot.
     if(!verifier.finalize(request.signature)) {
@@ -293,14 +299,12 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
         FaultTracker::getInstance().reportFault(client_id, "Ticket request timestamp outside freshness interval");
         return;
     }
+
+    std::stringstream ss;
     std::string pin_str;
     ss << request.body.pin;
     ss >> pin_str;
-    std::uint64_t voter_id;
-    auto it = pin_to_voter_id.find(pin_str);
-    if (it != pin_to_voter_id.end()) {
-        voter_id = std::stoull(it->second);
-    }
+
     std::map<std::string, std::string> voter_info = find_voter(
         Config::getString(
             Config::SECTION_BASIC, Config::VOTER_LIST_FILE
@@ -363,6 +367,12 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
     }
 
     if (client_tickets_map.find(request.body.ticket) != client_tickets_map.end() && timer_valid) {
+        auto find_voter_result = voter_status_table.find(voter_id);
+        if(find_voter_result != voter_status_table.end()) {
+            if(find_voter_result->second == VoterStatus::PENDING) {
+                find_voter_result->second = VoterStatus::CHECKED_IN;
+            }
+        }
         std::pair pair = client_tickets_map[request.body.ticket];
         id = pair.first;
         secret = pair.second;
@@ -421,8 +431,10 @@ void CheckinService::handle_trusted_client(std::string msg_string, asio::ip::tcp
             logger->debug("Failed sending message: {}", ec);
         }
         if (!timer) {
-            logger->warn("Request was timed out");
-            FaultTracker::getInstance().reportFault(client_id, "Request was timed out");
+            logger->warn("No pending ticket for voter ID {}: already used, expired, or never issued",
+                         voter_id);
+            FaultTracker::getInstance().reportFault(
+                    client_id, "No pending ticket for voter (already used, expired, or never issued)");
         }
         logger->warn("Invalid ticket");
         FaultTracker::getInstance().reportFault(client_id, "Invalid ticket");
@@ -559,7 +571,7 @@ void CheckinService::write_to_csv(const std::string& ticket, const std::string& 
         file << ticket << "," << id << "," << secret << std::endl;
         file.close();
     } else
-        logger->warn("Error: Unable to write to CSV file");
+        logger->error("Error: Unable to write to CSV file");
 }
 
 void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& client_ip, const CheckinRequest& request) {
@@ -605,21 +617,23 @@ void CheckinService::handle_checkin_request(const asio::ip::tcp::endpoint& clien
             if(find_voter_result != voter_status_table.end()) {
                 if(find_voter_result->second == VoterStatus::ELIGIBLE) {
                     find_voter_result->second = VoterStatus::PENDING;
-                    logger->debug("Accepted a check-in request for voter {} {} {} (UID {}) from client {}",
+                    logger->info("Accepted a check-in request for voter {} {} {} (UID {}) from client {}",
                                   request.body.first_name, request.body.middle_name, 
                                   request.body.last_name, request.body.voter_unique_id, 
                                   request.body.client_id_num);
                     accept = true;
                     start_timer(request.body.voter_unique_id);
                 } else {
-                    std::cout << "Voter not found\n";
-                    logger->debug("Rejecting client {}'s check-in request for {} {} {} (UID {}) because the voter has already checked in",
-                                  request.body.client_id_num, request.body.first_name, 
-                                  request.body.middle_name, request.body.last_name, 
-                                  request.body.voter_unique_id);
+                    logger->warn("Rejecting client {}'s check-in request for {} {} {} (UID {}) because the voter is {}",
+                                  request.body.client_id_num, request.body.first_name,
+                                  request.body.middle_name, request.body.last_name,
+                                  request.body.voter_unique_id,
+                                  find_voter_result->second == VoterStatus::PENDING
+                                          ? "already pending confirmation on a trusted device"
+                                          : "already checked in");
                 }
             } else {
-                logger->debug("Rejecting client {}'s check-in request for  {} {} {} (UID {}) because the voter is not in the server's voter status table",
+                logger->warn("Rejecting client {}'s check-in request for  {} {} {} (UID {}) because the voter is not in the server's voter status table",
                                request.body.client_id_num, request.body.first_name, request.body.middle_name, request.body.last_name, request.body.voter_unique_id);
             }
         }
@@ -681,14 +695,14 @@ void CheckinService::start_timer(const std::uint32_t voter_id) {
 }
 
 void CheckinService::handle_verification_timeout(const std::uint32_t voter_id) {
-    logger->debug("Check-in request for voter {} timed out", voter_id);
+    logger->info("Check-in request for voter {} timed out", voter_id);
     std::lock_guard<std::mutex> unlock(mtx);
     request_timers.erase(voter_id);
 
     auto it = voter_status_table.find(voter_id);
     if (it != voter_status_table.end() && it->second == VoterStatus::PENDING) {
         it->second = VoterStatus::ELIGIBLE;
-        logger->debug("Reverted voter {} from PENDING back to ELIGIBLE after check-in timeout", voter_id);
+        logger->info("Reverted voter {} from PENDING back to ELIGIBLE after check-in timeout", voter_id);
     }
 }
 
@@ -716,7 +730,7 @@ bool CheckinService::validate_client_request(const CheckinRequest& request, std:
     id_service_verifier.init();
     id_service_verifier.add_bytes(id_msg.data(), id_msg.size());
     if(!id_service_verifier.finalize(request.body.verified_id_message.id_service_signature)) {
-        logger->debug("Rejecting client {}'s check-in request for {} {} {} (UID {}) because the signature on the ID verification was invalid",
+        logger->warn("Rejecting client {}'s check-in request for {} {} {} (UID {}) because the signature on the ID verification was invalid",
                       request.body.client_id_num, request.body.first_name, request.body.middle_name, request.body.last_name, request.body.voter_unique_id);
         return false;
     }
@@ -733,7 +747,7 @@ bool CheckinService::validate_client_request(const CheckinRequest& request, std:
                                   ? current_timestamp - request.body.timestamp
                                   : request.body.timestamp - current_timestamp;
     if(std::abs(time_difference) > Config::getUInt32(Config::SECTION_SECURITY, Config::REQUEST_FRESHNESS_INTERVAL)) {
-        logger->debug("Rejecting client {}'s check-in request for {} {} {} (UID {}) because its timestamp, {}, was older than {} ms",
+        logger->warn("Rejecting client {}'s check-in request for {} {} {} (UID {}) because its timestamp, {}, was older than {} ms",
                       request.body.client_id_num, request.body.first_name, request.body.middle_name, request.body.last_name,
                       request.body.voter_unique_id, request.body.timestamp, Config::getUInt32(Config::SECTION_SECURITY, Config::REQUEST_FRESHNESS_INTERVAL));
         return false;

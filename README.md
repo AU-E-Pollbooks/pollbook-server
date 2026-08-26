@@ -1,77 +1,318 @@
-# E-Pollbook Check-in Service
+# A Secure E-Pollbook Check-in System
 
-This library provides a proof-of-concept implementation of a secure e-pollbook service that allows untrusted client devices to check in voters at a polling place. It includes these components:
+A proof-of-concept e-pollbook in which **untrusted, public-facing kiosks** can
+start a voter check-in but cannot complete one. Every check-in is finished on a
+separate **trusted poll-worker device**, so compromising a kiosk does not let an
+attacker check a voter in, check a voter in twice, or check in someone who is
+not there.
 
-* A CheckinService class that implements the check-in service, intended to run on a "back-end" server within a polling place (accessible only to poll workers, not the public)
-* A PollbookClient class that implements the client logic, intended to run on untrusted client devices (e.g. tablets, kiosks) available to the public within the polling place
-* A VoterIDService class that mocks up the behavior of an independent, state-provided voter ID verification service. The actual implementation of this service will vary greatly depending on the state administering the election, so in this library the class just provides the expected API but does not attempt to verify any identity documents.
-* Application entry points (Main functions) that construct each of these classes in a stand-alone executable and provide a basic command-line interface
-* A set of configuration files for the executables that demonstrate how to deploy the clients, check-in server, and ID server as processes within a single machine that communicate using the local loopback interface.
-* A set of configuration files for the executables that can be used to deploy the clients, check-in server, and ID server as Docker containers that communicate using a Docker Compose network, as well as the corresponding Docker configuration files needed for this deployment.
+The system is C++17 over mutually authenticated TLS, with RSA-2048/SHA-256
+signatures on every protocol message and an independent voter-ID service.
 
-## Building this library
+---
 
-This is a CMake C++ project adhering to the C++17 standard, so it requires a recent version of CMake and a C++ compiler. It depends on the following libraries:
+## For artifact evaluators
 
-* [OpenSSL](https://www.openssl.org/) for cryptography (packaged for Debian-like systems as `libssl-dev`)
-* [spdlog](https://github.com/gabime/spdlog) for logging, v1.11 or higher
-* [ASIO](https://think-async.com/asio), the non-Boost standalone version, for platform-independent network sockets
-* [nlohmann](https://github.com/nlohmann/json), for json serialised communication between the client and the server.
+**Start here.** The quickstart below goes from a clean clone to a completed
+two-phase check-in. It needs Docker and about ten minutes, most of it the
+one-time image build. No ansible, no inventory, no SSH.
 
-Once these dependencies are installed, and available in an include path that CMake can find, you should be able to build this library using the standard CMake incantations:
+### Requirements
 
-```
-mkdir build
-cd build
-cmake ..
-cmake --build .
-```
+| | |
+|---|---|
+| Docker Engine + Compose v2 | the only hard requirement for the quickstart |
+| Free subnet `172.16.0.0/16` | the compose network is pinned to fixed addresses |
+| ~3 GB disk, ~4 GB RAM | image is Ubuntu 24.04 + build toolchain |
+| Python 3 + `pip install -r tests/requirements.txt` | only for the measurement runs and figures |
+| Ansible | only for the multi-client fleet runs |
 
-After building is complete, the `apps/` directory within the build folder will contain the executables `client`, `secure_client`, `server`, and `id_server`, along with the `local-test-deployment` directory, which contains the sample configuration files for running the clients and servers as local processes on a single machine.
+### Quickstart
 
-## Deployment and configuration
+```bash
+git clone <this repository> && cd pollbook-server
 
-Both the client and server classes in this library expect certain global configuration options to be set in a configuration file that should be loaded and parsed by the singleton Config class when the program starts. The `client`, `server`, and `id_server` executables demonstrate how to initialize the Config class before constructing a client or service object, and they allow you to specify the name of the config file as a command-line option. The config file should be written in the standard INI format, and example config files for each type of executable (client, server, and id-server) are provided in the folder src/config/. The expected sections and keys for the config file are defined by the string constants defined in `include/epollbook/config/config.hpp`.
+# 1. Mint the PKI and stage the voter lists (once, on the host).
+#    The containers do not share a filesystem, so this must precede the build.
+./apps/docker-test-deployment/bootstrap.sh
 
-Among the essential configuration options are the locations of x509 public-key certificates for the check-in server and ID server, which must be manually copied to each device (clients and servers) before starting the service. Each client must also have its own public-key certificate, which it will send to the servers upon connecting. The script `generate_keys.sh` in the `local-test-deployment` directory demonstrates how to generate all the required keys and certificates, and copies the certificates needed by each device into its configuration folder.
-
-### Test Deployment Using Docker
-
-This repository contains a Dockerfile and compose.yaml file that can be used to deploy several Docker containers connected to a virtual network, for easier testing and development of this code on a single machine. Each container will get its own copy of the source code, but if you edit the code on your host computer you can use Docker Compose Watch to automatically copy changed files from your host's source directory to the containers. The directory `docker-test-deployment` inside the `apps` directory contains the config files for each container, similar to the local-test-deployment directory. However, unlike the local-test-deployment directory, you must populate it with public keys using the `generate_keys.sh` script *before* launching the Docker containers, since they will not share a filesystem.
-
-To start the Docker test deployment, assuming this repository is cloned to the folder `~/pollbook-server` on your development computer, you should run the following commands:
-
-```
-~/pollbook-server$ cd apps/docker-test-deployment
-~/pollbook-server/apps/docker-test-deployment$ ./generate_keys.sh
-~/pollbook-server/apps/docker-test-deployment$ cd ../../
-~/pollbook-server$ docker compose up -w
+# 2. Build the image and start four containers.
+docker compose up -d --build
 ```
 
-The terminal in which you run `docker compose up` will be occupied by the Docker Compose process, so you should open four new terminal windows to connect to the two servers and two clients. In each of these windows, use a `docker compose attach` command to connect to a container, where the terminal should already be in the correct working directory. You can then launch the `server`, `id_server`, `client`, or `secure_client` binaries, which should already be compiled:
+That brings up `checkin` (172.16.0.5), `dummy-id` (172.16.0.6),
+`untrusted-client-0` (172.16.0.100) and `trusted-client-1` (172.16.0.101).
 
-**Terminal 1**:
-```
-~/pollbook-server$ docker compose attach checkin
-root@a80553c134fe:/epollbook/build/apps/docker-test-deployment/checkin_server# ../../server
-```
+### Interactive walkthrough
 
-**Terminal 2**:
-```
-~/pollbook-server$ docker compose attach dummy-id
-root@5808a59fa1ad:/epollbook/build/apps/docker-test-deployment/id_server# ../../id_server
-```
+Four terminals. Each container already starts in the right working directory,
+and every binary takes its config file as the first argument.
 
-**Terminal 3**:
-```
-~/pollbook-server$ docker compose attach untrusted-client-0
-root@c4639b41e86b:/epollbook/build/apps/docker-test-deployment/client0# ../../client
+**Terminal 1 — check-in service**
+
+```bash
+docker compose exec checkin ../../server config.ini
+# [info] Check-in service started on port 6000
 ```
 
-**Terminal 4**:
-```
-~/pollbook-server$ docker compose attach trusted-client-1
-root@529bd64dda2e:/epollbook/build/apps/docker-test-deployment/client1# ../../secure_client
+**Terminal 2 — voter ID service**
+
+```bash
+docker compose exec dummy-id ../../id_server config.ini
+# [info] Loaded 2000 voter records
+# [info] ID Service started on port 6666
 ```
 
-If you make changes to a source code file (anywhere within your development computer's `~/pollbook-server` folder), Docker Compose Watch will automatically copy it to all of the containers. You can then rebuild the server or client programs by running `cmake --build .` within the `/epollbook/build/` directory on each container.
+**Terminal 3 — untrusted kiosk, Phase 1**
+
+```bash
+docker compose exec untrusted-client-0 ../../client config.ini
+```
+
+It asks for a voter. Any row of `data/voters.csv` works; the first one is:
+
+```
+last name:   Richard
+first name:  Katherine
+middle name: Robert
+unique ID:   100000
+```
+
+Expected: `Check-in succeeded!`. The voter is now **PENDING**, not checked in.
+A ticket has been issued and a timer started.
+
+**Terminal 4 — trusted poll-worker device, Phase 2**
+
+The kiosk is never told the PIN, and the ticket reaches the poll worker
+out-of-band — on paper, in the real design. Here the check-in service records
+each issued ticket as `ticket,voter_uid,secret`:
+
+```bash
+docker compose exec checkin cat ticket_validation.csv
+# 0ada81be8b8b3fefe54beb0167bfc8c8,100000,bbd59177...
+```
+
+Take the ticket from column 1. The voter's PIN is column 2 of
+`data/voters.csv` — `6411` for voter 100000. Then:
+
+```bash
+docker compose exec trusted-client-1 ../../secure_client config.ini
+```
+
+Enter the ticket, then the PIN. Expected: `Ticket verification succeeded!`. The
+voter is now **CHECKED_IN**.
+
+> Phase 2 must happen within `timeout_interval`, which is in **minutes** (60 by
+> default, set in `apps/docker-test-deployment/checkin_server/config.ini`), so
+> there is no need to rush the walkthrough. If you do exceed it,
+> the server reverts the voter to ELIGIBLE and you simply redo Phase 1 — that
+> revert is itself a fix for a denial-of-service bug and is exercised by the
+> `withhold-token` test below.
+
+### A negative check, in one command
+
+Run Terminal 4 a second time with the same ticket and PIN. It fails:
+
+```
+Ticket verification failed!
+```
+
+and the check-in service logs the reason:
+
+```
+[warning] No timer found for voter ID 100000
+[warning] No pending ticket for voter ID 100000: already used, expired, or never issued
+[warning] Invalid ticket
+```
+
+The ticket is single-use. A kiosk that records a ticket in flight cannot replay
+it, which is the `simple-replay` case from the paper.
+
+### Running it more than once
+
+Voter status lives in memory in the check-in service, so a second check-in of the
+same voter is refused and says so:
+
+```
+[warning] Rejecting client 0's check-in request for ... because the voter is
+          already pending confirmation on a trusted device
+[warning] Rejecting client 0's check-in request for ... because the voter is
+          already checked in
+```
+
+That is correct behaviour, not a fault. To go again, either pick a different row
+from `data/voters.csv` or restart the check-in service, which resets every voter
+to ELIGIBLE.
+
+### What that demonstrates
+
+- mutual TLS between all four components, on certificates minted by `bootstrap.sh`
+- the untrusted kiosk **cannot** complete a check-in on its own
+- the check-in service holds the voter in PENDING between the two phases
+- the trusted device's client id must appear in
+  `checkin_server/trusted_clients.txt` or Phase 2 is refused
+
+Tear down with `docker compose down`.
+
+---
+
+## Reproducing the paper's results
+
+### Figures in the paper
+
+Every figure and the aggregated data behind it is committed, so the numbers can
+be checked without re-running anything:
+
+| Paper figure | File |
+|---|---|
+| Throughput vs clients | `graphs/v2/throughput_vs_clients.png` |
+| ID-submission latency | `graphs/v2/latency_untrusted_id_service.png` |
+| Untrusted check-in latency | `graphs/v2/latency_untrusted_checkin_service.png` |
+| Trusted verification latency | `graphs/v2/latency_trusted_trusted_verify.png` |
+| Attacker reaction by attack type | `graphs/v2/contention/tb1/attacker_reaction_by_attack_{bar,box}.png` |
+| Attacker reaction vs load | `graphs/v2/contention/tb1/threaded/attacker_reaction_vs_load.png` |
+| Honest latency under attack | `graphs/v2/contention/tb2/honest_latency_baseline_vs_attack_{box,cdf}.png` |
+
+`graphs/v2/data/` holds the aggregated CSVs the figures were plotted from, and
+`graphs/v2/README.md` records how each was produced. Per-run raw logs are under
+`ansible-configs/tests/<N>-clients/`.
+
+Regenerate the figures from the committed data without running any experiment:
+
+```bash
+pip install -r tests/requirements.txt
+python3 tests/generate_graph.py ansible-configs/tests \
+    --x-throughput untrusted_service_count --outdir graphs/v2
+```
+
+`--x-throughput untrusted_service_count` matters: the default is
+`parallel_clients`, which in this dataset is a constant 20 for every run, so the
+default collapses all twenty points onto one x value.
+
+### Security claims
+
+Each attack in the paper is a mode of `tests/clients/client_misbehaviour.py`,
+driven through the harness rather than by hand:
+
+```bash
+python3 tests/stress_test.py \
+    --compose-dir . --compose-cmd "docker compose -f compose.yaml" \
+    --log-dir ansible-configs/logs --build-first \
+    --rounds 1 --runs 5 --parallel 5 \
+    --servers checkin dummy-id \
+    --untrusted-cmd "python ../../client_misbehaviour.py testing_client_config.ini --mode race-condition" \
+    --trusted trusted-client-1 --untrusted untrusted-client-0
+```
+
+Swap `--mode` for any of: `honest`, `simple-replay`, `stale-replay`,
+`delayed-replay`, `ticket-substitution`, `race-condition`, `cross-identity`,
+`tampered-body`, `spoofed-client-id`, `withhold-token`.
+
+Each run should show the client's attack **rejected** and a matching refusal on
+the check-in service. Pass `--build-first` whenever a client script changed —
+containers run the copy baked into the image, not your working tree.
+
+### Measurement runs (multi-client fleet)
+
+The latency and throughput numbers were collected over 2–40 clients using the
+ansible path, which generates a compose file for N clients, mints PKI at that
+scale, and provisions every container:
+
+```bash
+cd ansible-configs
+ansible-playbook full_deploy.yml             # build, start, launch binaries
+ansible-playbook render_and_copy_config.yml  # render + install configs
+```
+
+`tests/README.md` documents the harness and why it is arranged this way.
+
+---
+
+## Repository layout
+
+```
+src/, include/epollbook/   core library (CheckinService, VoterIDService,
+                           PollbookClient, FaultTracker, OpenSSL wrappers)
+apps/                      executables + the two deployment trees
+  docker-test-deployment/  compose deployment: bootstrap.sh + one config.ini each
+  local-test-deployment/   same components as plain host processes
+tests/                     harness, misbehaviour client, figure scripts
+  clients/                 Python clients that run inside containers
+data/                      voters.csv, id_voters.csv, pins.csv
+ansible-configs/           fleet deployment, templates, per-run raw data
+graphs/                    paper figures + the data behind them
+```
+
+### The two-phase protocol
+
+1. Kiosk sends a signed `CheckinRequest` carrying a `VerifiedVoterID` from the
+   ID service.
+2. Check-in service validates the signatures, marks the voter PENDING, issues a
+   ticket and starts a timer.
+3. The ticket and PIN reach the trusted device out-of-band.
+4. Trusted device sends a signed `TicketRequest`.
+5. Check-in service verifies identity, signature, freshness and PIN — in that
+   order — marks the voter CHECKED_IN and returns a token.
+
+Messages are JSON with a base64 signature over the body, framed by a 4-byte
+little-endian length prefix.
+
+---
+
+## Notes
+
+### Keys and certificates
+
+Everything `bootstrap.sh` and `generate_keys.sh` produce is disposable test
+material for a local Docker network: one throwaway CA, two server certs, and one
+cert per client. It authenticates nothing outside a test deployment and is
+regenerated on every run. Earlier revisions of this repository committed
+generated PKI of the same kind; it is equally disposable and is now gitignored.
+
+### Datasets
+
+`data/` holds one synthetic 2000-voter dataset and two projections of it.
+`gen_fake_voters.py` generates the master; no real voter data is involved.
+
+- `voters.csv` — 9 columns including PIN. The **check-in service** needs this
+  one: it reads the roll *and* the PIN mappings from the single file named by
+  `voter_list_file`.
+- `id_voters.csv` — 8 columns, no PIN. The **ID service** needs this one: it
+  parses positionally and treats field `[1]` as Last Name, so the PIN-bearing
+  file would silently break name validation.
+- `pins.csv` — used only by the Python kiosk client, purely to automate console
+  input during unattended test runs. The real protocol never gives a kiosk a
+  PIN; the C++ clients read no CSV at all.
+
+### Known characteristics
+
+The check-in service runs a single `io_context` thread and re-arms its accept
+loop inside the handshake handler, so connection admission is serial. Beyond a
+few concurrent full-rate clients new connections are refused. This is a property
+of the implementation, not of the harness, and the measurement runs are paced to
+human arrival rates rather than to hide it.
+
+The linearization point for a check-in (find voter → verify eligible → mark
+pending) is not lock-protected; the single service thread is what serializes it.
+Multi-threading the service would reintroduce the double-check-in race that
+`--mode race-condition` exercises.
+
+---
+
+## Building outside Docker
+
+CMake + C++17. Depends on OpenSSL 3.0, spdlog ≥ 1.11, standalone (non-Boost)
+ASIO, and nlohmann_json ≥ 3.10.5.
+
+```bash
+mkdir build && cd build
+cmake .. && cmake --build .
+```
+
+Executables land in `build/apps/`: `server`, `id_server`, `client`,
+`secure_client`, `warning_cache_client`. `apps/local-test-deployment/` holds
+configs for running the whole system as loopback processes on one host; run its
+`generate_keys.sh` first.
+
+Note that ASIO removed `buffer_cast` in recent versions; this code uses
+`buffers_begin` and builds against both old and new ASIO.

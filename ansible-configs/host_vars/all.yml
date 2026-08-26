@@ -1,0 +1,55 @@
+sc:
+  log_level: info
+  network:
+    subnet: "172.16.0.0/16"
+    gateway: "172.16.0.1"
+    checkin_host: 172.16.0.5
+    id_host: 172.16.0.6
+    checkin_port: 6000
+    id_port: 6666
+  timing:
+    request_freshness_interval: 120
+    timeout_interval: 60
+  paths:
+    ca_cert: "ca/ca_cert.pem"
+    checkin:
+      private_key: "private_key.pem"
+      pubkey: "checkin_pubkey.pem"
+      cert: "checkin_certificate.pem"
+      client_keys_folder: "client_pubkeys/"
+      client_key_file_prefix: "pubkey_"
+    id_server:
+      private_key: "private_key.pem"
+      pubkey: "id_pubkey.pem"
+      cert: "id_certificate.pem"
+    clients:
+      private_name: "private_key.pem"
+      cert_name: "certificate.pem"
+  services:
+    checkin:
+      container: "checkin"
+      voter_list_file: "voters.csv"
+      workdir: "/epollbook/build/apps/docker-test-deployment/checkin_server"
+      ip: "172.16.0.5"
+      build: "."
+    id_server:
+      container: "dummy-id"
+      workdir: "/epollbook/build/apps/docker-test-deployment/id_server"
+      ip: "172.16.0.6"
+      build: "."
+  clients:
+    - name: "untrusted-client-0"
+      container: "untrusted-client-0"
+      id: 0
+      type: "untrusted"
+      workdir: "/epollbook/build/apps/docker-test-deployment/client0"
+      ip: "172.16.0.10"
+      build: "."
+    - name: "trusted-client-1"
+      container: "trusted-client-1"
+      id: 1
+      type: "trusted"
+      workdir: "/epollbook/build/apps/docker-test-deployment/client1"
+      ip: "172.16.0.11"
+      build: "."
+

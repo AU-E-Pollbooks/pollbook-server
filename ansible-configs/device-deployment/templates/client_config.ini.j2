@@ -1,0 +1,17 @@
+[Basic]
+client_id = {{ client_id }}
+checkin_service_host = {{ checkin_service_host }}
+checkin_service_port = {{ checkin_service_port }}
+id_service_host = {{ id_service_host }}
+id_service_port = {{ id_service_port }}
+log_level = {{ pollbook_log_level }}
+checkin_latency_log = {{ pollbook_install_dir }}/untrusted_checkin_latency_log.csv
+
+[Security]
+private_key = {{ pollbook_install_dir }}/pki/private_key.pem
+id_service_public_key = {{ pollbook_install_dir }}/pki/id_pubkey.pem
+checkin_service_public_key = {{ pollbook_install_dir }}/pki/checkin_pubkey.pem
+checkin_service_cert = {{ pollbook_install_dir }}/pki/checkin_certificate.pem
+id_service_cert = {{ pollbook_install_dir }}/pki/id_certificate.pem
+local_cert = {{ pollbook_install_dir }}/pki/certificate.pem
+ca_cert = {{ pollbook_install_dir }}/pki/ca_cert.pem

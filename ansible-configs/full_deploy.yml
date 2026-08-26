@@ -1,0 +1,404 @@
+---
+- name: Full E-Pollbook Automated Setup (dynamic clients, merged features)
+  hosts: localhost
+  gather_facts: false
+
+  vars_prompt:
+    - name: untrusted_count
+      prompt: "How many UNTRUSTED clients?"
+      private: no
+      default: "2"
+    - name: trusted_count
+      prompt: "How many TRUSTED clients?"
+      private: no
+      default: "2"
+    - name: client_ip_base
+      prompt: "Client IP base (first 3 octets)"
+      private: no
+      default: "172.16.0"
+    - name: client_ip_start
+      prompt: "Client IP start (last octet)"
+      private: no
+      default: "100"
+
+  vars:
+    enable_harness: false               # set true to run stress harness + logging
+    start_binaries: false               # set true to docker exec ./server / ./id_server / clients
+    stress_runs: 200
+    stress_parallel: 32
+    stress_rounds: 10
+    apps_base: "{{ playbook_dir }}/../apps/docker-test-deployment"
+    private_key_name: "private_key.pem"
+    client_cert_name: "certificate.pem"
+    ca_cert_path: "{{ apps_base }}/ca/ca_cert.pem"
+    id_server_pubkey_path: "{{ apps_base }}/id_server/public.pem"
+    id_server_cert_path:   "{{ apps_base }}/id_server/certificate.pem"
+    checkin_pubkey_path:   "{{ apps_base }}/checkin_server/public.pem"
+    checkin_cert_path:     "{{ apps_base }}/checkin_server/certificate.pem"
+    desired_checkin_port: 6000
+    trusted_listen_port: 9555
+    default_ticket_sink_host_literal: "${TRUSTED_NAME}"
+    default_ticket_sink_port: 9555
+    default_pin_csv: "pins.csv"
+    default_voters_csv: "voters.csv"
+    checkin_cpuset: "0"
+    id_server_cpuset: "0"
+    # Single shared image: built once by the checkin service, reused by every
+    # other container. Avoids N parallel docker builds that exhaust host RAM.
+    image_name: "epollbook:latest"
+    # Per-container memory ceiling. With 0 swap, an uncapped runaway container
+    # can lock up the host; this turns that into a single-container OOM kill.
+    container_mem_limit: "8g"
+
+  pre_tasks:
+    - name: Load static vars (host_vars/all.yml -> sc)
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/host_vars/all.yml"
+
+    # Flatten + defaults
+    - name: Prepare network defaults
+      ansible.builtin.set_fact:
+        network: "{{ {
+          'subnet': '172.16.0.0/16',
+          'gateway': '172.16.0.1'
+        } | combine(sc.network | default({})) }}"
+
+    # derive server IPs from prompts (.5/.6)
+    - name: Derive server IPs from ip_base (.5/.6)
+      ansible.builtin.set_fact:
+        network: "{{ network | combine({
+          'checkin_host': client_ip_base ~ '.5',
+          'id_host':      client_ip_base ~ '.6'
+        }, recursive=True) }}"
+
+
+    - name: Prepare checkin defaults
+      ansible.builtin.set_fact:
+        checkin: "{{ {
+          'container': 'checkin',
+          'workdir': '/epollbook/build/apps/docker-test-deployment/checkin_server',
+          'build': '.'
+        } | combine(sc.services.checkin | default({})) }}"
+
+    - name: Prepare id_server defaults
+      ansible.builtin.set_fact:
+        id_server: "{{ {
+          'container': 'dummy-id',
+          'workdir': '/epollbook/build/apps/docker-test-deployment/id_server',
+          'build': '.'
+        } | combine(sc.services.id_server | default({})) }}"
+
+    - name: Compute totals
+      ansible.builtin.set_fact:
+        untrusted_n: "{{ untrusted_count | int }}"
+        trusted_n: "{{ trusted_count | int }}"
+        total_n: "{{ (untrusted_count | int) + (trusted_count | int) }}"
+        ip_base: "{{ client_ip_base }}"
+        ip_start: "{{ client_ip_start | int }}"
+
+    - name: Sanity check client IP last octet
+      ansible.builtin.assert:
+        that:
+          - ((ip_start | int) + (total_n | int) - 1) < 255
+        fail_msg: "Client IPs would overflow the last octet. Reduce counts or lower client_ip_start."
+
+    # Build clients
+    - name: Init client lists
+      ansible.builtin.set_fact:
+        clients_untrusted: []
+        clients_trusted: []
+
+    - name: Build UNTRUSTED clients
+      ansible.builtin.set_fact:
+        clients_untrusted: "{{ clients_untrusted + [ {
+          'type': 'untrusted',
+          'id': ((item | int) * 2),
+          'name': 'untrusted-client-' ~ (((item | int) * 2) | string),
+          'container': 'untrusted-client-' ~ (((item | int) * 2) | string),
+          'workdir': '/epollbook/build/apps/docker-test-deployment/client' ~ (((item | int) * 2) | string),
+          'ip': ip_base ~ '.' ~ (((ip_start | int) + (item | int)) | string),
+          'build': '.'
+        } ] }}"
+      loop: "{{ range(0, (untrusted_n | int)) | list }}"
+
+    - name: Build TRUSTED clients
+      ansible.builtin.set_fact:
+        clients_trusted: "{{ clients_trusted + [ {
+          'type': 'trusted',
+          'id': ((item | int) * 2 + 1),
+          'name': 'trusted-client-' ~ (((item | int) * 2 + 1) | string),
+          'container': 'trusted-client-' ~ (((item | int) * 2 + 1) | string),
+          'workdir': '/epollbook/build/apps/docker-test-deployment/client' ~ (((item | int) * 2 + 1) | string),
+          'ip': ip_base ~ '.' ~ (((ip_start | int) + (untrusted_n | int) + (item | int)) | string),
+          'build': '.'
+        } ] }}"
+      loop: "{{ range(0, (trusted_n | int)) | list }}"
+
+    - name: Map trusted client id -> ip
+      ansible.builtin.set_fact:
+        trusted_ip_by_id: "{{ dict(
+          (clients_trusted | map(attribute='id') | list)
+          | zip(clients_trusted | map(attribute='ip') | list)
+        ) }}"
+
+    - name: Merge client lists
+      ansible.builtin.set_fact:
+        clients_generated: "{{ (clients_untrusted | default([])) + (clients_trusted | default([])) }}"
+
+    # extract names for stress harness args
+    - name: Extract client names for stress harness
+      ansible.builtin.set_fact:
+        untrusted_names: "{{ clients_untrusted | map(attribute='name') | list }}"
+        trusted_names:   "{{ clients_trusted   | map(attribute='name') | list }}"
+
+    # Precompute trusted_by_id for TRUSTED_NAME mapping
+    - name: Map trusted clients by id
+      ansible.builtin.set_fact:
+        trusted_by_id: "{{ dict(
+          (clients_trusted | map(attribute='id') | list)
+          | zip(clients_trusted | map(attribute='name') | list)
+        ) }}"
+
+    - name: Build content for trusted_clients.txt
+      ansible.builtin.set_fact:
+        trusted_list_content: "{{ (clients_trusted | map(attribute='id') | list | join('\n')) ~ '\n' }}"
+
+
+    # Build services as dict
+
+    # checkin is the only service with a 'build' section: it builds image_name
+    # once. id_server and clients reference that image, so the stack builds a
+    # single image instead of one per container.
+    - name: Build checkin service object
+      ansible.builtin.set_fact:
+        checkin_service: "{{ {
+          'build': (checkin.build | default('.')),
+          'image': image_name,
+          'container_name': checkin.container,
+          'tty': True,
+          'stdin_open': True,
+          'working_dir': checkin.workdir,
+          'cpuset': (sc.services.checkin.cpuset | default(checkin_cpuset)),
+          'mem_limit': container_mem_limit,
+          'networks': { 'pollbook': ({ 'ipv4_address': network.checkin_host } if (network.checkin_host is defined) else {}) },
+          'environment': (
+            {
+              'SERVICE_ROLE': 'checkin',
+              'PYTHONUNBUFFERED': '1',
+              'TZ': 'America/New_York'
+            } | combine(sc.services.checkin.env | default({}))
+          ),
+          'develop': { 'watch': [ { 'path': '.', 'target': '/epollbook', 'action': 'sync' } ] }
+        } }}"
+
+    - name: Build id_server service object
+      ansible.builtin.set_fact:
+        id_service: "{{ {
+          'image': image_name,
+          'container_name': id_server.container,
+          'tty': True,
+          'stdin_open': True,
+          'working_dir': id_server.workdir,
+          'cpuset': (sc.services.id_server.cpuset | default(id_server_cpuset)),
+          'mem_limit': container_mem_limit,
+          'networks': { 'pollbook': ({ 'ipv4_address': network.id_host } if (network.id_host is defined) else {}) },
+          'environment': (
+            {
+              'SERVICE_ROLE': 'id',
+              'PYTHONUNBUFFERED': '1',
+              'TZ': 'America/New_York'
+            } | combine(sc.services.id_server.env | default({}))
+          ),
+          'develop': { 'watch': [ { 'path': '.', 'target': '/epollbook', 'action': 'sync' } ] }
+        } }}"
+
+    - name: Build client services dict (adds TRUSTED_NAME)
+      ansible.builtin.set_fact:
+        client_services: "{{ client_services | default({}) | combine({ item.name: {
+          'image': image_name,
+          'container_name': item.container,
+          'tty': True,
+          'stdin_open': True,
+          'working_dir': item.workdir,
+          'mem_limit': container_mem_limit,
+          'networks': { 'pollbook': { 'ipv4_address': item.ip } },
+          'environment': (
+            (sc.services.client_defaults.env | default({}))
+            | combine(item.env | default({}))
+            | combine({
+                'CLIENT_ID': (item.id | string),
+                'TRUSTED': ( '1' if item.type == 'trusted' else '0' ),
+                'PYTHONUNBUFFERED': '1',
+                'TZ': 'America/New_York'
+              })
+          ),
+          'develop': { 'watch': [ { 'path': '.', 'target': '/epollbook', 'action': 'sync' } ] }
+        }}) }}"
+      loop: "{{ clients_generated }}"
+
+    - name: Map trusted client id -> ip
+      ansible.builtin.set_fact:
+        trusted_ip_by_id: "{{ dict(
+          (clients_trusted | map(attribute='id') | list)
+          | zip(clients_trusted | map(attribute='ip') | list)
+        ) }}"
+
+    - name: Per-client setup (dir, config, csvs)
+      ansible.builtin.include_tasks: client_setup.yml
+      loop: "{{ clients_generated }}"
+      loop_control:
+        loop_var: client
+        label: "{{ client.name }}"
+      vars:
+        is_trusted: "{{ (client.id | int) % 2 == 1 }}"
+        cfg_log_level: "{{ 'debug' if ((client.id | int) % 2 == 1) else 'trace' }}"
+        checkin_service_port_override: 6000
+        trusted_listen_port: 9555
+        ticket_sink_host: "${TRUSTED_NAME}"
+        ticket_sink_port: 9555
+        pin_csv: "pins.csv"
+        voters_csv: "voters.csv"
+
+    - name: Build services_all
+      ansible.builtin.set_fact:
+        services_all: "{{ { 'checkin': checkin_service, 'dummy-id': id_service } | combine(client_services | default({})) }}"
+
+
+    # ---- split facts so each depends on the previous one safely ----
+    - name: Build ipam_entry
+      ansible.builtin.set_fact:
+        ipam_entry: "{{ {'subnet': (network.subnet | default('172.16.0.0/16'))} | combine( ({'gateway': network.gateway}) if (network.gateway is defined) else {} ) }}"
+
+    - name: Build networks_obj
+      ansible.builtin.set_fact:
+        networks_obj: "{{ { 'pollbook': { 'ipam': { 'config': [ ipam_entry ] } } } }}"
+
+    - name: Build compose_obj
+      ansible.builtin.set_fact:
+        compose_obj: "{{ { 'services': services_all, 'networks': networks_obj } }}"
+
+    # Write compose.yaml (no template)
+    - name: Write compose.yaml from object (spaces only, valid YAML)
+      ansible.builtin.copy:
+        dest: "{{ playbook_dir }}/../compose.yaml"
+        mode: "0644"
+        content: "{{ compose_obj | to_nice_yaml(indent=2) }}"
+
+  tasks:
+    # Show & validate before touching containers
+    - name: Show compose.yaml (first 80 lines, numbered)
+      ansible.builtin.shell: "nl -ba compose.yaml | sed -n '1,80p'"
+      args: { chdir: "{{ playbook_dir }}/.." }
+      changed_when: false
+      register: compose_head
+
+    - name: Print compose head
+      ansible.builtin.debug:
+        msg: "{{ compose_head.stdout }}"
+
+    - name: Validate generated compose.yaml
+      ansible.builtin.shell: docker compose -f compose.yaml config -q
+      args: { chdir: "{{ playbook_dir }}/.." }
+      changed_when: false
+
+    # Bring the stack up
+    - name: Make generate_keys.sh executable
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/../apps/docker-test-deployment/generate_keys.sh"
+        mode: '0755'
+
+    - name: Run key/cert generation for N clients
+      ansible.builtin.command: ./generate_keys.sh {{ total_n }}
+      args: { chdir: "{{ playbook_dir }}/../apps/docker-test-deployment" }
+
+    - name: docker compose down (clean)
+      ansible.builtin.shell: docker compose down --remove-orphans
+      args: { chdir: "{{ playbook_dir }}/.." }
+
+    - name: docker compose up
+      ansible.builtin.shell: docker compose up -d --build
+      args: { chdir: "{{ playbook_dir }}/.." }
+
+    - name: Small pause
+      ansible.builtin.pause:
+        seconds: 3
+
+    - name: Write trusted_client.txt in checkin server container
+      ansible.builtin.shell: |
+        docker exec {{ checkin.container }} /bin/sh -lc '
+          mkdir -p "{{ checkin.workdir }}" &&
+          cat > "{{ checkin.workdir }}/trusted_clients.txt" << "EOF"
+        {{ trusted_list_content }}
+        EOF
+        '
+      changed_when: true
+
+    # start binaries inside containers (optional)
+    - name: Start checkin
+      when: start_binaries
+      ansible.builtin.shell: >
+        docker exec -d -w {{ checkin.workdir }}
+        {{ checkin.container }} ../../server
+
+    - name: Start id_server
+      when: start_binaries
+      ansible.builtin.shell: >
+        docker exec -d -w {{ id_server.workdir }}
+        {{ id_server.container }} ../../id_server
+
+    - name: Start clients
+      when: start_binaries
+      ansible.builtin.shell: >
+        docker exec -d -w {{ item.workdir }} {{ item.container }}
+        {{ '../../secure_client' if item.type == 'trusted' else '../../client' }}
+      loop: "{{ clients_generated }}"
+      loop_control:
+        label: "{{ item.container }} ({{ item.ip }})"
+
+    # harness + logging (optional)
+    - name: Ensure logs dir exists
+      when: enable_harness
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/logs"
+        state: directory
+        mode: "0755"
+
+    - name: Run stress harness (mirror stdout/stderr to console and logs)
+      when: enable_harness
+      ansible.builtin.shell: |
+        set -euo pipefail
+
+        LOG="{{ playbook_dir }}/logs/orchestrator.log"
+        : > "$LOG"
+
+        # Forward INT/TERM to child so Python finalizers run
+        trap 'kill -INT 0' INT
+        trap 'kill -TERM 0' TERM
+
+        PYTHONUNBUFFERED=1 stdbuf -oL -eL \
+        python3 -u {{ playbook_dir }}/../tests/stress_test.py \
+          --compose-dir {{ playbook_dir }}/.. \
+          --compose-cmd "docker compose -f {{ playbook_dir }}/../compose.yaml" \
+          --log-dir "{{ playbook_dir }}/logs" \
+          --runs {{ stress_runs | default(100) }} \
+          --parallel {{ stress_parallel | default(20) }} \
+          --rounds {{ stress_rounds | default(1) }} \
+          --walk-delay {{ stress_walk_delay | default(0) }} \
+          --untrusted-delay {{ stress_untrusted_delay | default(0) }} \
+          --untrusted {{ untrusted_names | default([]) | map('quote') | join(' ') }} \
+          --trusted   {{ trusted_names   | default([]) | map('quote') | join(' ') }} \
+        2> >(sed 's/^/[HARNESS-ERR] /' | tee -a "$LOG" >&2) \
+        | sed 's/^/[HARNESS] /' | tee -a "$LOG"
+      args:
+        chdir: "{{ playbook_dir }}/.."
+      changed_when: false
+
+    - name: Fetch harness async status
+      when: enable_harness
+      ansible.builtin.async_status:
+        jid: "{{ harness_job.ansible_job_id }}"
+      register: ansible_job_result
+      until: ansible_job_result.finished
+      retries: 100000
+      delay: 2
+      changed_when: false
