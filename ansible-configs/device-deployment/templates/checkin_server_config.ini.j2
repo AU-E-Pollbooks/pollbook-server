@@ -1,0 +1,19 @@
+[Basic]
+checkin_service_host = {{ checkin_service_host }}
+checkin_service_port = {{ checkin_service_port }}
+voter_list_file = {{ pollbook_install_dir }}/data/voters.csv
+trusted_clients_file = {{ pollbook_install_dir }}/data/trusted_clients.txt
+log_level = {{ pollbook_log_level }}
+
+[Security]
+private_key = {{ pollbook_install_dir }}/pki/private_key.pem
+id_service_public_key = {{ pollbook_install_dir }}/pki/id_pubkey.pem
+checkin_service_public_key = {{ pollbook_install_dir }}/pki/checkin_pubkey.pem
+client_keys_folder = {{ pollbook_install_dir }}/pki/client_pubkeys/
+client_key_file_prefix = {{ client_key_file_prefix }}
+request_freshness_interval = {{ request_freshness_interval }}
+checkin_service_cert = {{ pollbook_install_dir }}/pki/checkin_certificate.pem
+id_service_cert = {{ pollbook_install_dir }}/pki/id_certificate.pem
+local_cert = {{ pollbook_install_dir }}/pki/checkin_certificate.pem
+ca_cert = {{ pollbook_install_dir }}/pki/ca_cert.pem
+timeout_interval = {{ timeout_interval }}

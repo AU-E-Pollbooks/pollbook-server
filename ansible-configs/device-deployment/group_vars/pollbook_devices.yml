@@ -1,0 +1,27 @@
+---
+# Remote layout. The application binaries/services are intentionally managed
+# separately until the target OS and service names are known.
+pollbook_install_dir: /opt/pollbook
+pollbook_owner: pollbook
+pollbook_group: pollbook
+
+# Physical/LAN addresses advertised to the clients.
+checkin_service_host: 192.168.0.21
+checkin_service_port: 6000
+id_service_host: 192.168.0.22
+id_service_port: 6666
+
+pollbook_log_level: info
+request_freshness_interval: 120
+timeout_interval: 60
+
+# Client IDs listed here are treated as trusted by the check-in service. Every
+# value must also be assigned to a host in the pollbook_clients inventory group.
+trusted_client_ids:
+  - 1
+
+# The server code concatenates this prefix and a client ID to locate each key.
+client_key_file_prefix: pubkey_
+
+# Set to true only when the SSH account needs sudo to write install_dir.
+ansible_become: true
