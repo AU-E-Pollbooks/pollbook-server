@@ -1,0 +1,22 @@
+experiment_set,run_label,date,voter_id,voter_name,checkin_latency_ms,trusted_latency_ms,checkin_approved,trusted_approved,walk_delay_s,included_in_success_average,notes
+prior_trusted_only,1,2026-08-22,100390,Vanessa Amanda Lloyd,,2408,1,1,0,1,Successful trusted measurement; check-in latency was not instrumented
+prior_trusted_only,2,2026-08-22,100997,Sarah Daniel Romero,,2569,1,1,0,1,Successful trusted measurement; check-in latency was not instrumented
+prior_trusted_only,3,2026-08-22,101070,Barbara Kelly Cruz,,2243,1,1,0,1,Successful trusted measurement; check-in latency was not instrumented
+prior_trusted_only,4,2026-08-22,101071,Benjamin Christopher Hernandez,,2188,1,1,0,1,Successful trusted measurement; check-in latency was not instrumented
+prior_trusted_only,5,2026-08-22,101072,Wendy Sabrina Keller,,2954,1,1,0,1,Successful trusted measurement; check-in latency was not instrumented
+prior_trusted_only,6,2026-08-22,101073,Marvin Lisa Norton,,4873,1,1,10,1,Successful trusted measurement
+prior_trusted_only,7,2026-08-22,101074,Barbara Peter Obrien,,2265,1,1,10,1,Successful trusted measurement
+prior_trusted_only,8,2026-08-22,101298,Jordan Jeffrey Garcia,,1493,1,1,10,1,Successful trusted measurement
+prior_trusted_only,9,2026-08-22,101794,Mary Samantha Dennis,,1305,1,1,10,1,Successful trusted measurement
+prior_trusted_only,10-failed,2026-08-22,102239,Scott Gregory Carlson,,3187,1,0,10,0,Trusted rejection retained; RFID card contained an older ticket
+full_process,1,2026-08-23,102240,Matthew Brandon Harmon,7.002,1464,1,1,10,1,Successful paired measurement
+full_process,2,2026-08-23,102610,Aaron James Curtis,6.821,1826,1,1,10,1,Successful paired measurement
+full_process,3,2026-08-23,102925,Eric Allison Green,7.751,1676,1,1,10,1,Successful paired measurement
+full_process,4,2026-08-23,103051,Cynthia Christopher Key,10.139,3007,1,1,10,1,Successful paired measurement
+full_process,5,2026-08-23,103052,Cheryl James Lowe,6.834,1908,1,1,10,1,Successful paired measurement
+full_process,6,2026-08-23,103053,Lauren Darrell Sloan,6.970,2334,1,1,10,1,Successful paired measurement
+full_process,7,2026-08-23,103054,Melissa Meghan Bradley,10.395,2003,1,1,10,1,Successful paired measurement
+full_process,8,2026-08-23,103219,Kristine Jennifer Cook,6.938,1713,1,1,10,1,Successful paired measurement
+full_process,9,2026-08-23,103375,Timothy John Carter,6.618,1937,1,1,10,1,Successful paired measurement
+full_process,10-failed,2026-08-23,103657,Ann Timothy Rodriguez,8.398,3535,1,0,10,0,Trusted rejection retained
+full_process,10R,2026-08-23,103763,Danielle Cameron Villegas,6.136,2705,1,1,10,1,Successful replacement paired measurement
