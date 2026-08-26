@@ -62,30 +62,10 @@ services:
     mem_limit: 8g
     networks:
       pollbook:
-        ipv4_address: 172.16.0.102
+        ipv4_address: 172.16.0.101
     stdin_open: true
     tty: true
     working_dir: /epollbook/build/apps/docker-test-deployment/client1
-  trusted-client-3:
-    container_name: trusted-client-3
-    develop:
-      watch:
-      - action: sync
-        path: .
-        target: /epollbook
-    environment:
-      CLIENT_ID: '3'
-      PYTHONUNBUFFERED: '1'
-      TRUSTED: '1'
-      TZ: America/New_York
-    image: epollbook:latest
-    mem_limit: 8g
-    networks:
-      pollbook:
-        ipv4_address: 172.16.0.103
-    stdin_open: true
-    tty: true
-    working_dir: /epollbook/build/apps/docker-test-deployment/client3
   untrusted-client-0:
     container_name: untrusted-client-0
     develop:
@@ -106,23 +86,3 @@ services:
     stdin_open: true
     tty: true
     working_dir: /epollbook/build/apps/docker-test-deployment/client0
-  untrusted-client-2:
-    container_name: untrusted-client-2
-    develop:
-      watch:
-      - action: sync
-        path: .
-        target: /epollbook
-    environment:
-      CLIENT_ID: '2'
-      PYTHONUNBUFFERED: '1'
-      TRUSTED: '0'
-      TZ: America/New_York
-    image: epollbook:latest
-    mem_limit: 8g
-    networks:
-      pollbook:
-        ipv4_address: 172.16.0.101
-    stdin_open: true
-    tty: true
-    working_dir: /epollbook/build/apps/docker-test-deployment/client2

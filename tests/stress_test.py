@@ -483,8 +483,12 @@ def parse_args():
                 help="Run `docker compose build <service>` before every untrusted run (very slow)")
     ap.add_argument("--walk-delay", type=float, default=0.0,
                     help="Delay (seconds) after each untrusted run finishes to simulate walk time")
-    ap.add_argument("--checkin-cmd", default="../../server server_config.ini")
-    ap.add_argument("--id-cmd", default="../../id_server id_server_config.ini")
+    # Both deployment paths place the C++ config at <workdir>/config.ini:
+    # render_and_copy_config.yml docker-cp's it there, and the compose path ships
+    # it in each component directory. The binaries' own defaults differ
+    # (server_config.ini / id_server_config.ini), so pass the name explicitly.
+    ap.add_argument("--checkin-cmd", default="../../server config.ini")
+    ap.add_argument("--id-cmd", default="../../id_server config.ini")
     ap.add_argument("--trusted-cmd", default="python ../../trusted_client.py testing_client_config.ini")
     ap.add_argument("--untrusted-cmd", default="python ../../client.py testing_client_config.ini")
     # artifacts store

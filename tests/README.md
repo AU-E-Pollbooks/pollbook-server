@@ -138,8 +138,14 @@ race that `--mode race-condition` exercises.
 
 | consumer | file |
 |---|---|
-| C++ servers and clients | `config.ini` (the built-in default) |
+| C++ servers and clients | `config.ini` |
 | Python clients | `testing_client_config.ini` |
 
-Ansible renders both. The C++ default is why the servers are launched with no
-argument.
+Both deployment paths install the C++ config as `config.ini` in each component's
+working directory: `render_and_copy_config.yml` docker-cp's it there, and the
+compose path ships one per component directory.
+
+`config.ini` is *not* the binaries' built-in default — those are per-binary
+(`server_config.ini`, `id_server_config.ini`, `client_config.ini`, set in
+`apps/*.cpp`). So the config name is always passed explicitly, which is why
+`stress_test.py` launches `../../server config.ini`.
