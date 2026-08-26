@@ -232,7 +232,7 @@ void VoterIDService::load_voter_data_from_csv() {
         }
         
         if (fields.size() < 8) {
-            logger->warn("Invalid line format: {}", line);
+            logger->error("Invalid line format: {}", line);
             continue;
         }
         
@@ -244,7 +244,7 @@ void VoterIDService::load_voter_data_from_csv() {
             std::string fullName = fields[2] + " " + fields[3] + " " + fields[1];
             voter_id_name_map[uid] = fullName;
         } catch (const std::exception& e) {
-            logger->warn("Error processing line: {}", line);
+            logger->error("Error processing line: {}", line);
         }
     }
     

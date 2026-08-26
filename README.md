@@ -128,6 +128,22 @@ and the check-in service logs the reason:
 The ticket is single-use. A kiosk that records a ticket in flight cannot replay
 it, which is the `simple-replay` case from the paper.
 
+### Running it more than once
+
+Voter status lives in memory in the check-in service, so a second check-in of the
+same voter is refused and says so:
+
+```
+[warning] Rejecting client 0's check-in request for ... because the voter is
+          already pending confirmation on a trusted device
+[warning] Rejecting client 0's check-in request for ... because the voter is
+          already checked in
+```
+
+That is correct behaviour, not a fault. To go again, either pick a different row
+from `data/voters.csv` or restart the check-in service, which resets every voter
+to ELIGIBLE.
+
 ### What that demonstrates
 
 - mutual TLS between all four components, on certificates minted by `bootstrap.sh`
