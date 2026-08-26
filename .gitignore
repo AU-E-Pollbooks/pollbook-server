@@ -46,6 +46,9 @@ ansible-configs/device-deployment/secrets/*
 ansible-configs/device-deployment/secrets/shared/*
 !ansible-configs/device-deployment/secrets/shared/README.md
 
+# ansible rendered configs
+ansible-configs/output
+
 # Python
 __pycache__/
 *.pyc
